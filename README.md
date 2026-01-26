@@ -1,4 +1,4 @@
-# I AM Sober - AI-Powered Recovery Companion
+# i am sober. - AI-Powered Recovery Companion
 
 > 🏆 **Commit To Change Hackathon Entry** | Health, Fitness & Wellness Track + Best Use of Opik
 
@@ -18,7 +18,7 @@ Addiction recovery is a challenging journey that requires consistent support, se
 
 ## 💡 Solution
 
-I AM Sober is a fully agentic AI recovery companion that:
+'i am sober.' is a fully agentic AI recovery companion that:
 1. **Tracks sobriety** with gamification (XP, levels, streaks, achievements)
 2. **Provides 24/7 AI coaching** using a ReAct (Reasoning + Acting) agent architecture
 3. **Detects mood patterns** and triggers through journal sentiment analysis
