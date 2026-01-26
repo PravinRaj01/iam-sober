@@ -215,4 +215,4 @@ MIT License - See [LICENSE](LICENSE) for details.
 
 ---
 
-*Stay strong. Every day counts.* 💪
+*Because for the battles no one talks about, you shouldn't have to fight alone*
