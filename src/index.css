@@ -1,0 +1,155 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Definition of the design system. All colors, gradients, fonts, etc should be defined here. 
+All colors MUST be HSL.
+*/
+
+@layer base {
+  :root {
+    /* Calming recovery theme - teal/cyan focus */
+    --background: 200 25% 98%;
+    --foreground: 200 15% 15%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 200 15% 15%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 200 15% 15%;
+
+    /* Primary: Calming teal */
+    --primary: 180 60% 45%;
+    --primary-foreground: 0 0% 100%;
+    --primary-glow: 180 70% 55%;
+
+    /* Secondary: Soft support color */
+    --secondary: 200 40% 92%;
+    --secondary-foreground: 200 15% 20%;
+
+    --muted: 200 30% 94%;
+    --muted-foreground: 200 10% 45%;
+
+    /* Accent: Vibrant cyan for CTAs */
+    --accent: 185 75% 50%;
+    --accent-foreground: 0 0% 100%;
+
+    /* Success/milestone color */
+    --success: 150 60% 50%;
+    --success-foreground: 0 0% 100%;
+
+    /* Warning/urge color */
+    --warning: 40 90% 55%;
+    --warning-foreground: 0 0% 100%;
+
+    --destructive: 0 70% 55%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 200 25% 88%;
+    --input: 200 25% 88%;
+    --ring: 180 60% 45%;
+
+    --radius: 0.75rem;
+
+    /* Gradients */
+    --gradient-primary: linear-gradient(135deg, hsl(180 60% 45%), hsl(185 75% 50%));
+    --gradient-success: linear-gradient(135deg, hsl(150 60% 50%), hsl(160 65% 55%));
+    --gradient-calm: linear-gradient(180deg, hsl(200 40% 96%), hsl(180 35% 94%));
+    --gradient-purple: linear-gradient(135deg, hsl(270 60% 60%), hsl(280 70% 65%));
+
+    /* Shadows */
+    --shadow-soft: 0 4px 20px -4px hsl(180 60% 45% / 0.15);
+    --shadow-glow: 0 0 30px hsl(180 70% 55% / 0.3);
+    --shadow-elegant: 0 4px 20px -2px hsl(180 60% 45% / 0.15);
+
+    /* Animations */
+    --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    
+    /* Dynamic background colors (set by BackgroundContext) */
+    --bg-primary: 180 60% 45%;
+    --bg-secondary: 200 40% 92%;
+    --bg-accent: 185 75% 50%;
+  }
+
+  .dark {
+    --background: 200 25% 8%;
+    --foreground: 200 15% 92%;
+
+    --card: 200 20% 12%;
+    --card-foreground: 200 15% 92%;
+
+    --popover: 200 20% 12%;
+    --popover-foreground: 200 15% 92%;
+
+    --primary: 180 60% 50%;
+    --primary-foreground: 0 0% 100%;
+    --primary-glow: 180 70% 60%;
+
+    --secondary: 200 25% 18%;
+    --secondary-foreground: 200 15% 90%;
+
+    --muted: 200 25% 16%;
+    --muted-foreground: 200 10% 60%;
+
+    --accent: 185 75% 55%;
+    --accent-foreground: 0 0% 100%;
+
+    --success: 150 60% 55%;
+    --success-foreground: 0 0% 100%;
+
+    --warning: 40 90% 60%;
+    --warning-foreground: 0 0% 100%;
+
+    --destructive: 0 70% 60%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 200 25% 22%;
+    --input: 200 25% 22%;
+    --ring: 180 60% 50%;
+
+    --gradient-primary: linear-gradient(135deg, hsl(180 60% 50%), hsl(185 75% 55%));
+    --gradient-success: linear-gradient(135deg, hsl(150 60% 55%), hsl(160 65% 60%));
+    --gradient-calm: linear-gradient(180deg, hsl(200 25% 10%), hsl(180 25% 12%));
+    --gradient-purple: linear-gradient(135deg, hsl(270 60% 55%), hsl(280 70% 60%));
+
+    --shadow-soft: 0 4px 20px -4px hsl(0 0% 0% / 0.4);
+    --shadow-glow: 0 0 30px hsl(180 70% 60% / 0.4);
+    --shadow-elegant: 0 4px 20px -2px hsl(180 60% 50% / 0.25);
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  html,
+  body,
+  #root {
+    @apply overflow-x-hidden;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+  }
+
+  /* Mobile viewport handling - ensures content adjusts when keyboard appears */
+  @supports (height: 100dvh) {
+    .min-h-screen {
+      min-height: 100dvh;
+    }
+  }
+
+  /* Ensure dialogs and modals scroll properly on mobile */
+  .mobile-scroll-fix {
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+  }
+
+  /* Responsive text truncation */
+  @screen xs {
+    .xs\:inline {
+      display: inline;
+    }
+  }
+}
