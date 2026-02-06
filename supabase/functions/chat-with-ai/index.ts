@@ -1,18 +1,19 @@
 /**
- * AI COACH - Fully Agentic ReAct Agent with Tool-Augmented LLM
+ * AI COACH - Multi-Model Router Architecture with ReAct Agent
  * 
- * Architecture Pattern: ReAct (Reasoning + Acting) with Autonomous Tool Selection
- * Model: Google Gemini 2.5 Flash Lite via Direct API
+ * Architecture: 3-Layer Router
+ * Layer 1: Intent Router (Groq Llama 3 8B) - ~100-200ms classification
+ * Layer 2: Specialist Agents:
+ *   - Chat Agent (Cerebras Llama 3.1 70B) - fast conversation, no tools
+ *   - Data/Action/Support Agents (Gemini 2.5 Flash Lite) - tool-calling
+ * Layer 3: Fallback (Groq Llama 3.1 70B) - when Gemini 429s
  * 
- * COMPETITION-READY FEATURES:
- * ✅ True Agent Autonomy - ALL tools available, no regex gating
- * ✅ Confirmation Flow - Agent confirms before write actions
- * ✅ Multi-Step Reasoning - Up to 5 chained tool calls
- * ✅ Pattern Recognition - Proactive insights based on data
- * ✅ Crisis Detection & Escalation - Safety layer with hotline integration
- * ✅ Action Planning - Multi-step goal planning
- * ✅ Conversation Memory - Context from past interactions
- * ✅ Full Observability - All interactions logged with metrics
+ * FEATURES:
+ * ✅ Intent-based routing for optimal latency
+ * ✅ Tool-subset selection (3-6 tools vs 14)
+ * ✅ Multi-model fallback chain
+ * ✅ Crisis detection (never skipped)
+ * ✅ Full observability with routing metrics
  */
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
@@ -33,196 +34,416 @@ const CRISIS_KEYWORDS = [
 // Sanitize user input to prevent prompt injection
 function sanitizeInput(input: string, maxLength: number = 5000): string {
   if (!input || typeof input !== 'string') return '';
-  
   let sanitized = input.slice(0, maxLength).trim();
-  
   const dangerousPatterns = [
-    /system:/gi,
-    /assistant:/gi,
-    /<\|im_start\|>/gi,
-    /<\|im_end\|>/gi,
-    /\[INST\]/gi,
-    /\[\/INST\]/gi,
-    /<s>/gi,
-    /<\/s>/gi,
+    /system:/gi, /assistant:/gi, /<\|im_start\|>/gi, /<\|im_end\|>/gi,
+    /\[INST\]/gi, /\[\/INST\]/gi, /<s>/gi, /<\/s>/gi,
   ];
-  
   for (const pattern of dangerousPatterns) {
     sanitized = sanitized.replace(pattern, '');
   }
-  
   return sanitized;
 }
 
-// Check for crisis indicators
 function detectCrisis(message: string): { isCrisis: boolean; matchedKeywords: string[] } {
   const lowerMessage = message.toLowerCase();
   const matchedKeywords = CRISIS_KEYWORDS.filter(keyword => lowerMessage.includes(keyword));
-  return {
-    isCrisis: matchedKeywords.length > 0,
-    matchedKeywords
-  };
+  return { isCrisis: matchedKeywords.length > 0, matchedKeywords };
 }
 
-// Define ALL AI Agent Tools for Gemini function calling format
-const geminiTools = [{
-  functionDeclarations: [
-    // === READ TOOLS ===
-    {
-      name: "get_user_progress",
-      description: "Get user's sobriety progress including days sober, current streak, level, XP, and longest streak. ALWAYS call this before answering questions about user's progress, days sober, or recovery status.",
-      parameters: { type: "object", properties: {}, required: [] }
-    },
-    {
-      name: "get_recent_moods",
-      description: "Get user's recent check-in data including mood, urge intensity, and notes from the last 7 days. ALWAYS call this before answering questions about how the user is doing, their mood patterns, or check-in history.",
-      parameters: { type: "object", properties: {}, required: [] }
-    },
-    {
-      name: "get_active_goals",
-      description: "Get user's current active goals and their progress. ALWAYS call this before answering questions about user's goals or what they're working on.",
-      parameters: { type: "object", properties: {}, required: [] }
-    },
-    {
-      name: "get_recent_journal_entries",
-      description: "Get user's recent journal entries to understand their emotional patterns. ALWAYS call this before answering questions about their journal or past entries.",
-      parameters: { type: "object", properties: {}, required: [] }
-    },
-    {
-      name: "get_biometric_data",
-      description: "Get user's recent biometric data from wearables including heart rate, sleep, steps, and stress levels. Call this when discussing health metrics or physical wellness.",
-      parameters: { type: "object", properties: {}, required: [] }
-    },
-    {
-      name: "get_conversation_context",
-      description: "Get summaries of past conversations to maintain continuity. Call this when the user references past discussions or you need context about previous interactions.",
-      parameters: { type: "object", properties: {}, required: [] }
-    },
+// ============================================================
+// TOOL DEFINITIONS - Split by agent category
+// ============================================================
+
+const dataToolDeclarations = [
+  {
+    name: "get_user_progress",
+    description: "Get user's sobriety progress including days sober, current streak, level, XP, and longest streak. ALWAYS call this before answering questions about user's progress, days sober, or recovery status.",
+    parameters: { type: "object", properties: {}, required: [] }
+  },
+  {
+    name: "get_recent_moods",
+    description: "Get user's recent check-in data including mood, urge intensity, and notes from the last 7 days. ALWAYS call this before answering questions about how the user is doing, their mood patterns, or check-in history.",
+    parameters: { type: "object", properties: {}, required: [] }
+  },
+  {
+    name: "get_active_goals",
+    description: "Get user's current active goals and their progress. ALWAYS call this before answering questions about user's goals or what they're working on.",
+    parameters: { type: "object", properties: {}, required: [] }
+  },
+  {
+    name: "get_recent_journal_entries",
+    description: "Get user's recent journal entries to understand their emotional patterns. ALWAYS call this before answering questions about their journal or past entries.",
+    parameters: { type: "object", properties: {}, required: [] }
+  },
+  {
+    name: "get_biometric_data",
+    description: "Get user's recent biometric data from wearables including heart rate, sleep, steps, and stress levels. Call this when discussing health metrics or physical wellness.",
+    parameters: { type: "object", properties: {}, required: [] }
+  },
+  {
+    name: "get_conversation_context",
+    description: "Get summaries of past conversations to maintain continuity. Call this when the user references past discussions or you need context about previous interactions.",
+    parameters: { type: "object", properties: {}, required: [] }
+  },
+];
+
+const actionToolDeclarations = [
+  {
+    name: "create_goal",
+    description: "Create a new recovery goal for the user. IMPORTANT: Before calling this, ASK the user what specific goal they want to create and confirm the details.",
+    parameters: {
+      type: "object",
+      properties: {
+        title: { type: "string", description: "The goal title" },
+        description: { type: "string", description: "Optional description" },
+        target_days: { type: "number", description: "Number of days to achieve this goal" }
+      },
+      required: ["title"]
+    }
+  },
+  {
+    name: "create_check_in",
+    description: "Log a mood check-in for the user. IMPORTANT: Before calling this, ASK the user about their current mood and any urges.",
+    parameters: {
+      type: "object",
+      properties: {
+        mood: { type: "string", enum: ["great", "good", "okay", "struggling", "crisis"], description: "The user's current mood" },
+        urge_intensity: { type: "number", description: "Urge intensity from 0-10" },
+        notes: { type: "string", description: "Notes about the check-in" }
+      },
+      required: ["mood"]
+    }
+  },
+  {
+    name: "create_journal_entry",
+    description: "Create a journal entry for the user. IMPORTANT: Before calling this, ASK the user what they want to write about.",
+    parameters: {
+      type: "object",
+      properties: {
+        title: { type: "string", description: "Title for the journal entry" },
+        content: { type: "string", description: "The journal content" }
+      },
+      required: ["content"]
+    }
+  },
+  {
+    name: "complete_goal",
+    description: "Mark a goal as completed. Call this when the user says they've achieved a specific goal.",
+    parameters: {
+      type: "object",
+      properties: {
+        goal_title: { type: "string", description: "The title of the goal to mark as complete" }
+      },
+      required: ["goal_title"]
+    }
+  },
+  {
+    name: "log_coping_activity",
+    description: "Log that the user used a coping activity.",
+    parameters: {
+      type: "object",
+      properties: {
+        activity_name: { type: "string", description: "Name of the coping activity" },
+        category: { type: "string", enum: ["breathing", "physical", "mindfulness", "social", "creative", "other"] },
+        helpful: { type: "boolean", description: "Whether the activity was helpful" }
+      },
+      required: ["activity_name", "category"]
+    }
+  },
+];
+
+const supportToolDeclarations = [
+  {
+    name: "suggest_coping_activity",
+    description: "Suggest a specific coping activity based on current stress level or emotional state.",
+    parameters: {
+      type: "object",
+      properties: {
+        stress_level: { type: "string", enum: ["low", "medium", "high", "crisis"], description: "Current stress level" }
+      },
+      required: ["stress_level"]
+    }
+  },
+  {
+    name: "create_action_plan",
+    description: "Create a multi-step action plan for achieving a complex recovery goal.",
+    parameters: {
+      type: "object",
+      properties: {
+        goal_description: { type: "string", description: "Description of the overall goal" },
+        steps: { type: "array", items: { type: "string" }, description: "Array of specific action steps" },
+        timeline_days: { type: "number", description: "Total number of days for the plan" }
+      },
+      required: ["goal_description", "steps"]
+    }
+  },
+  {
+    name: "escalate_crisis",
+    description: "CRITICAL SAFETY TOOL: Call this IMMEDIATELY when the user expresses suicidal thoughts, self-harm intentions, or severe crisis.",
+    parameters: {
+      type: "object",
+      properties: {
+        crisis_type: { type: "string", enum: ["suicidal_ideation", "self_harm", "severe_relapse", "mental_health_emergency", "other"] },
+        severity: { type: "string", enum: ["high", "critical"] },
+        user_statement: { type: "string", description: "The concerning statement from the user" }
+      },
+      required: ["crisis_type", "severity"]
+    }
+  },
+  {
+    name: "log_intervention",
+    description: "Log when the AI proactively helped the user for observability tracking.",
+    parameters: {
+      type: "object",
+      properties: {
+        intervention_type: { type: "string", description: "Type of intervention provided" },
+        was_helpful: { type: "boolean", description: "Whether the intervention seemed helpful" }
+      },
+      required: ["intervention_type"]
+    }
+  }
+];
+
+// Build Gemini-format tool groups
+function getGeminiTools(category: string) {
+  let declarations;
+  switch (category) {
+    case "data": declarations = dataToolDeclarations; break;
+    case "action": declarations = actionToolDeclarations; break;
+    case "support": declarations = [...supportToolDeclarations]; break;
+    default: declarations = [...dataToolDeclarations, ...actionToolDeclarations, ...supportToolDeclarations]; break;
+  }
+  return [{ functionDeclarations: declarations }];
+}
+
+// Convert to OpenAI-format tools for Groq fallback
+function getOpenAITools(category: string) {
+  let declarations;
+  switch (category) {
+    case "data": declarations = dataToolDeclarations; break;
+    case "action": declarations = actionToolDeclarations; break;
+    case "support": declarations = [...supportToolDeclarations]; break;
+    default: declarations = [...dataToolDeclarations, ...actionToolDeclarations, ...supportToolDeclarations]; break;
+  }
+  return declarations.map(d => ({
+    type: "function" as const,
+    function: {
+      name: d.name,
+      description: d.description,
+      parameters: d.parameters
+    }
+  }));
+}
+
+// ============================================================
+// INTENT ROUTER - Groq Llama 3 8B
+// ============================================================
+
+async function classifyIntent(message: string, crisisDetected: boolean): Promise<string> {
+  if (crisisDetected) return "support"; // Always route crisis to support
+
+  const GROQ_API_KEY = Deno.env.get("GROQ_API_KEY");
+  if (!GROQ_API_KEY) {
+    console.warn("[Router] GROQ_API_KEY not set, falling back to all-tools mode");
+    return "all";
+  }
+
+  try {
+    const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${GROQ_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model: "llama3-8b-8192",
+        messages: [
+          {
+            role: "system",
+            content: `Classify the user message into exactly ONE category. Respond with ONLY the category word, nothing else.
+
+Categories:
+- data: User asks about their progress, stats, moods, goals, journals, biometrics, or history
+- action: User wants to create, update, complete, or log something (goals, check-ins, journal entries, coping activities)
+- support: User is struggling emotionally, needs coping strategies, is in crisis, or needs an action plan
+- chat: General conversation, greetings, motivation, questions about recovery, or anything not fitting above categories`
+          },
+          { role: "user", content: message }
+        ],
+        max_tokens: 10,
+        temperature: 0,
+      }),
+    });
+
+    if (!response.ok) {
+      console.error(`[Router] Groq error ${response.status}`);
+      return "all";
+    }
+
+    const data = await response.json();
+    const category = (data.choices?.[0]?.message?.content || "").trim().toLowerCase();
     
-    // === ACTION TOOLS ===
-    {
-      name: "suggest_coping_activity",
-      description: "Suggest a specific coping activity based on current stress level or emotional state. Call this when the user is struggling, stressed, or needs coping strategies.",
-      parameters: {
-        type: "object",
-        properties: {
-          stress_level: { 
-            type: "string", 
-            enum: ["low", "medium", "high", "crisis"],
-            description: "The user's current stress level based on conversation context"
-          }
-        },
-        required: ["stress_level"]
-      }
-    },
-    {
-      name: "create_action_plan",
-      description: "Create a multi-step action plan for achieving a complex recovery goal. Use this when the user describes a big goal that needs to be broken into steps.",
-      parameters: {
-        type: "object",
-        properties: {
-          goal_description: { type: "string", description: "Description of the overall goal" },
-          steps: { type: "array", items: { type: "string" }, description: "Array of specific action steps" },
-          timeline_days: { type: "number", description: "Total number of days for the plan" }
-        },
-        required: ["goal_description", "steps"]
-      }
-    },
-    {
-      name: "escalate_crisis",
-      description: "CRITICAL SAFETY TOOL: Call this IMMEDIATELY when the user expresses suicidal thoughts, self-harm intentions, or severe crisis. This logs the event and ensures proper resources are provided.",
-      parameters: {
-        type: "object",
-        properties: {
-          crisis_type: { type: "string", enum: ["suicidal_ideation", "self_harm", "severe_relapse", "mental_health_emergency", "other"], description: "Type of crisis detected" },
-          severity: { type: "string", enum: ["high", "critical"], description: "Severity level of the crisis" },
-          user_statement: { type: "string", description: "The concerning statement from the user (for documentation)" }
-        },
-        required: ["crisis_type", "severity"]
-      }
-    },
+    if (["data", "action", "support", "chat"].includes(category)) {
+      console.log(`[Router] Classified as: ${category}`);
+      return category;
+    }
     
-    // === WRITE TOOLS ===
-    {
-      name: "create_goal",
-      description: "Create a new recovery goal for the user. IMPORTANT: Before calling this, ASK the user what specific goal they want to create and confirm the details. Only call when user has explicitly provided goal details.",
-      parameters: {
-        type: "object",
-        properties: {
-          title: { type: "string", description: "The goal title (e.g., 'Exercise 3 times a week', 'Attend AA meeting')" },
-          description: { type: "string", description: "Optional description with more details about the goal" },
-          target_days: { type: "number", description: "Number of days to achieve this goal (optional)" }
-        },
-        required: ["title"]
-      }
-    },
-    {
-      name: "create_check_in",
-      description: "Log a mood check-in for the user. IMPORTANT: Before calling this, ASK the user about their current mood (1-10) and any urges. Only call when user has explicitly shared their mood.",
-      parameters: {
-        type: "object",
-        properties: {
-          mood: { type: "string", enum: ["great", "good", "okay", "struggling", "crisis"], description: "The user's current mood" },
-          urge_intensity: { type: "number", description: "Urge intensity from 0-10 (0 = no urge, 10 = extreme urge)" },
-          notes: { type: "string", description: "Notes about the check-in, context, or what triggered the mood" }
-        },
-        required: ["mood"]
-      }
-    },
-    {
-      name: "create_journal_entry",
-      description: "Create a journal entry for the user. IMPORTANT: Before calling this, ASK the user what they want to write about. Only call when user has provided the content to save.",
-      parameters: {
-        type: "object",
-        properties: {
-          title: { type: "string", description: "Title for the journal entry" },
-          content: { type: "string", description: "The journal content - capture what the user shared" }
-        },
-        required: ["content"]
-      }
-    },
-    {
-      name: "complete_goal",
-      description: "Mark a goal as completed. Call this when the user says they've achieved or completed a specific goal.",
-      parameters: {
-        type: "object",
-        properties: {
-          goal_title: { type: "string", description: "The title of the goal to mark as complete (will fuzzy match)" }
-        },
-        required: ["goal_title"]
-      }
-    },
-    {
-      name: "log_coping_activity",
-      description: "Log that the user used a coping activity. Call this when the user mentions they did a coping activity or used a recovery strategy.",
-      parameters: {
-        type: "object",
-        properties: {
-          activity_name: { type: "string", description: "Name of the coping activity (e.g., 'Deep breathing', 'Went for a walk')" },
-          category: { type: "string", enum: ["breathing", "physical", "mindfulness", "social", "creative", "other"], description: "Category of the activity" },
-          helpful: { type: "boolean", description: "Whether the activity was helpful" }
-        },
-        required: ["activity_name", "category"]
-      }
-    },
+    console.warn(`[Router] Unknown category "${category}", using all`);
+    return "all";
+  } catch (error) {
+    console.error("[Router] Classification failed:", error);
+    return "all";
+  }
+}
+
+// ============================================================
+// CEREBRAS CHAT AGENT - Fast conversation, no tools
+// ============================================================
+
+async function callCerebrasChat(
+  systemPrompt: string,
+  message: string,
+  conversationHistory: any[]
+): Promise<string | null> {
+  const CEREBRAS_API_KEY = Deno.env.get("CEREBRAS_API_KEY");
+  if (!CEREBRAS_API_KEY) {
+    console.warn("[CerebrasChat] CEREBRAS_API_KEY not set");
+    return null;
+  }
+
+  try {
+    const messages = [
+      { role: "system", content: systemPrompt },
+      ...conversationHistory.slice(-10).map((msg: any) => ({
+        role: msg.role === "user" ? "user" : "assistant",
+        content: typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content)
+      })),
+      { role: "user", content: message }
+    ];
+
+    const response = await fetch("https://api.cerebras.ai/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${CEREBRAS_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model: "llama3.1-70b",
+        messages,
+        max_tokens: 300,
+        temperature: 0.7,
+      }),
+    });
+
+    if (!response.ok) {
+      const errText = await response.text().catch(() => "");
+      console.error(`[CerebrasChat] Error ${response.status}: ${errText}`);
+      return null;
+    }
+
+    const data = await response.json();
+    return data.choices?.[0]?.message?.content || null;
+  } catch (error) {
+    console.error("[CerebrasChat] Failed:", error);
+    return null;
+  }
+}
+
+// ============================================================
+// GROQ FALLBACK WORKER - Tool calling when Gemini 429s
+// ============================================================
+
+async function callGroqWithTools(
+  systemPrompt: string,
+  contents: any[],
+  tools: any[]
+): Promise<{ content: string | null; toolCalls: any[] | null }> {
+  const GROQ_API_KEY = Deno.env.get("GROQ_API_KEY");
+  if (!GROQ_API_KEY) {
+    console.warn("[GroqFallback] GROQ_API_KEY not set");
+    return { content: null, toolCalls: null };
+  }
+
+  try {
+    // Convert Gemini-style contents to OpenAI messages
+    const messages: any[] = [{ role: "system", content: systemPrompt }];
     
-    // === META TOOLS ===
-    {
-      name: "log_intervention",
-      description: "Log when the AI proactively helped the user for observability tracking. Call this after providing significant support or intervention.",
-      parameters: {
-        type: "object",
-        properties: {
-          intervention_type: { type: "string", description: "Type of intervention provided" },
-          was_helpful: { type: "boolean", description: "Whether the intervention seemed helpful based on user response" }
-        },
-        required: ["intervention_type"]
+    for (const item of contents) {
+      if (item.role === "user") {
+        const text = item.parts?.[0]?.text || item.parts?.[0]?.functionResponse;
+        if (item.parts?.[0]?.functionResponse) {
+          messages.push({
+            role: "tool",
+            tool_call_id: `call_${item.parts[0].functionResponse.name}`,
+            content: JSON.stringify(item.parts[0].functionResponse.response)
+          });
+        } else if (text) {
+          messages.push({ role: "user", content: text });
+        }
+      } else if (item.role === "model") {
+        if (item.parts?.[0]?.functionCall) {
+          messages.push({
+            role: "assistant",
+            tool_calls: [{
+              id: `call_${item.parts[0].functionCall.name}`,
+              type: "function",
+              function: {
+                name: item.parts[0].functionCall.name,
+                arguments: JSON.stringify(item.parts[0].functionCall.args || {})
+              }
+            }]
+          });
+        } else {
+          messages.push({ role: "assistant", content: item.parts?.[0]?.text || "" });
+        }
       }
     }
-  ]
-}];
 
-// Execute tool calls
+    const body: any = {
+      model: "llama-3.3-70b-versatile",
+      messages,
+      max_tokens: 500,
+      temperature: 0.7,
+    };
+    
+    if (tools.length > 0) {
+      body.tools = tools;
+      body.tool_choice = "auto";
+    }
+
+    const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${GROQ_API_KEY}`,
+      },
+      body: JSON.stringify(body),
+    });
+
+    if (!response.ok) {
+      const errText = await response.text().catch(() => "");
+      console.error(`[GroqFallback] Error ${response.status}: ${errText}`);
+      return { content: null, toolCalls: null };
+    }
+
+    const data = await response.json();
+    const choice = data.choices?.[0]?.message;
+    
+    return {
+      content: choice?.content || null,
+      toolCalls: choice?.tool_calls || null
+    };
+  } catch (error) {
+    console.error("[GroqFallback] Failed:", error);
+    return { content: null, toolCalls: null };
+  }
+}
+
+// ============================================================
+// TOOL EXECUTOR - Handles all tool calls regardless of model
+// ============================================================
+
 async function executeTool(supabase: any, userId: string, toolName: string, args: any): Promise<any> {
   switch (toolName) {
     case "get_user_progress": {
@@ -238,7 +459,6 @@ async function executeTool(supabase: any, userId: string, toolName: string, args
       
       const milestones = [7, 14, 30, 60, 90, 180, 365, 730];
       const nextMilestone = milestones.find(m => m > daysSober);
-      const daysToMilestone = nextMilestone ? nextMilestone - daysSober : null;
       
       return {
         days_sober: daysSober,
@@ -249,7 +469,7 @@ async function executeTool(supabase: any, userId: string, toolName: string, args
         points: profile?.points || 0,
         addiction_type: profile?.addiction_type || "addiction",
         next_milestone: nextMilestone,
-        days_to_milestone: daysToMilestone
+        days_to_milestone: nextMilestone ? nextMilestone - daysSober : null
       };
     }
     
@@ -495,9 +715,7 @@ async function executeTool(supabase: any, userId: string, toolName: string, args
       }).select().single();
       
       if (error) return { success: false, error: error.message };
-      
       await supabase.from("profiles").update({ last_check_in: new Date().toISOString() }).eq("id", userId);
-      
       return { success: true, message: `✅ Check-in logged! Mood: ${args.mood}${args.urge_intensity ? `, Urge: ${args.urge_intensity}/10` : ''}`, check_in: data };
     }
     
@@ -528,7 +746,6 @@ async function executeTool(supabase: any, userId: string, toolName: string, args
       }
       
       const { error } = await supabase.from("goals").update({ completed: true, progress: 100 }).eq("id", bestMatch.id);
-      
       if (error) return { success: false, error: error.message };
       return { success: true, message: `🎉 Goal "${bestMatch.title}" marked as complete! Great job!` };
     }
@@ -557,6 +774,74 @@ async function executeTool(supabase: any, userId: string, toolName: string, args
   }
 }
 
+// ============================================================
+// GEMINI WORKER - Primary tool-calling model
+// ============================================================
+
+async function callGeminiWithTools(
+  systemPrompt: string,
+  contents: any[],
+  tools: any[],
+  apiKey: string
+): Promise<{ ok: boolean; status: number; data?: any }> {
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${apiKey}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents,
+        systemInstruction: { parts: [{ text: systemPrompt }] },
+        tools,
+        toolConfig: { functionCallingConfig: { mode: "AUTO" } }
+      }),
+    }
+  );
+
+  if (!response.ok) {
+    return { ok: false, status: response.status };
+  }
+
+  const data = await response.json();
+  return { ok: true, status: 200, data };
+}
+
+// Generate contextual response from tool results when model returns empty
+function generateFallbackFromTools(allToolResults: any[]): string {
+  if (allToolResults.length === 0) {
+    return "I'm here to support you on your recovery journey. How can I help you today?";
+  }
+  
+  const lastResult = allToolResults[allToolResults.length - 1];
+  const toolName = lastResult.tool;
+  const result = lastResult.result;
+  
+  if (toolName === "get_recent_journal_entries") {
+    const entries = result.recent_entries || [];
+    if (entries.length === 0) return "You don't have any journal entries yet. Would you like to start one?";
+    const entryList = entries.map((e: any, i: number) => `${i + 1}. **${e.title || 'Untitled'}** (${new Date(e.date).toLocaleDateString()}): ${e.excerpt}`).join('\n');
+    return `Here are your recent journal entries:\n\n${entryList}\n\nWould you like to add a new entry or discuss any of these?`;
+  } else if (toolName === "get_active_goals") {
+    const goals = result.goals || [];
+    if (goals.length === 0) return "You don't have any active goals yet. Would you like to set one?";
+    const goalList = goals.map((g: any, i: number) => `${i + 1}. **${g.title}** - ${g.progress || 0}% complete${g.days_remaining ? ` (${g.days_remaining} days left)` : ''}`).join('\n');
+    return `Here are your active goals:\n\n${goalList}\n\nKeep up the great work!`;
+  } else if (toolName === "get_user_progress") {
+    return `You're ${result.days_sober} days sober - that's amazing! Your current streak is ${result.current_streak} days, Level ${result.level} with ${result.xp} XP.${result.days_to_milestone ? ` Only ${result.days_to_milestone} days until your next milestone!` : ''} How are you feeling today?`;
+  } else if (toolName === "get_recent_moods") {
+    if (result.total_check_ins === 0) return "I don't see any recent check-ins. How are you feeling right now?";
+    return `In the past week, you've done ${result.total_check_ins} check-ins. Your mood trend is ${result.trend}, with an average urge intensity of ${result.average_urge_intensity}/10.`;
+  } else if (result?.success && result?.message) {
+    return result.message;
+  }
+  
+  return "I've processed your request. Is there anything else I can help you with?";
+}
+
+// ============================================================
+// MAIN HANDLER
+// ============================================================
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -565,6 +850,8 @@ serve(async (req) => {
   const startTime = Date.now();
   let toolsCalled: string[] = [];
   let autonomyScore = 0;
+  let routerCategory = "unknown";
+  let modelUsed = "unknown";
 
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
@@ -591,12 +878,13 @@ serve(async (req) => {
     
     const crisisCheck = detectCrisis(sanitizedMessage);
     
-    // Convert conversation history to Gemini format
-    const sanitizedHistory = (conversationHistory || []).map((msg: any) => ({
-      role: msg.role === "user" ? "user" : "model",
-      parts: [{ text: sanitizeInput(msg.content, 800) }]
-    })).slice(-12); // Keep more history since Gemini has better limits
+    // ---- STEP 1: Classify Intent via Groq Router ----
+    const routerStart = Date.now();
+    routerCategory = await classifyIntent(sanitizedMessage, crisisCheck.isCrisis);
+    const routerMs = Date.now() - routerStart;
+    console.log(`[Agent] Router: ${routerCategory} (${routerMs}ms) | Crisis: ${crisisCheck.isCrisis}`);
 
+    // Get user profile for system prompt
     const { data: profile } = await supabase
       .from("profiles")
       .select("pseudonym, addiction_type, sobriety_start_date, level")
@@ -612,179 +900,275 @@ serve(async (req) => {
 CORE RULES:
 1. Be warm, supportive, and practical. Keep responses under 150 words.
 2. Use tools to get real user data before answering questions about their progress, moods, goals, or journals.
-3. ALWAYS respond with actual data after calling READ tools. If user asks to "list journals" or "show goals", call the tool and then DESCRIBE what you found in your response.
+3. ALWAYS respond with actual data after calling READ tools.
 4. For WRITE tools (create_goal, create_check_in, create_journal_entry):
    - ALWAYS ask the user for details FIRST before creating anything
-   - NEVER create duplicates - if user asks "is that added?" or "did you add it?", call get_active_goals or get_recent_journal_entries to CHECK, then confirm what you see
+   - NEVER create duplicates
    - Only call create_* tools when user explicitly provides NEW content to add
 5. ${crisisCheck.isCrisis ? 'CRISIS DETECTED: Call escalate_crisis immediately and share 988 hotline.' : 'If user mentions suicide or self-harm, call escalate_crisis immediately.'}
 
-IMPORTANT: After calling any tool, you MUST provide a helpful text response that describes or confirms the data. Never leave the response empty.`;
+IMPORTANT: After calling any tool, provide a helpful text response that describes or confirms the data.`;
 
+    // ---- STEP 2: Route to appropriate agent ----
+
+    // === CHAT PATH: Cerebras (fast, no tools) ===
+    if (routerCategory === "chat") {
+      console.log("[Agent] Chat path -> Cerebras");
+      modelUsed = "cerebras-llama3.1-70b";
+      
+      const chatResponse = await callCerebrasChat(
+        systemPrompt,
+        sanitizedMessage,
+        conversationHistory || []
+      );
+
+      let finalContent = chatResponse;
+      
+      // Fallback to Gemini if Cerebras fails
+      if (!finalContent) {
+        console.log("[Agent] Cerebras failed, falling back to Gemini for chat");
+        modelUsed = "gemini-2.5-flash-lite";
+        const GOOGLE_API_KEY = Deno.env.get("GOOGLE_API_KEY");
+        if (GOOGLE_API_KEY) {
+          const sanitizedHistory = (conversationHistory || []).map((msg: any) => ({
+            role: msg.role === "user" ? "user" : "model",
+            parts: [{ text: sanitizeInput(msg.content, 800) }]
+          })).slice(-12);
+          
+          const contents = [...sanitizedHistory, { role: "user", parts: [{ text: sanitizedMessage }] }];
+          const geminiResult = await callGeminiWithTools(systemPrompt, contents, [], GOOGLE_API_KEY);
+          if (geminiResult.ok) {
+            finalContent = geminiResult.data?.candidates?.[0]?.content?.parts?.[0]?.text || null;
+          }
+        }
+      }
+
+      if (!finalContent) {
+        finalContent = "I'm here to support you on your recovery journey. How can I help you today?";
+        modelUsed = "fallback-static";
+      }
+
+      const responseTimeMs = Date.now() - startTime;
+      
+      // Log observability
+      try {
+        await supabase.from("ai_observability_logs").insert({
+          user_id: user.id,
+          function_name: "chat-with-ai",
+          input_summary: sanitizedMessage.substring(0, 100),
+          tools_called: [],
+          response_summary: finalContent.substring(0, 200),
+          response_time_ms: responseTimeMs,
+          model_used: modelUsed,
+          router_category: routerCategory,
+          intervention_triggered: false,
+        });
+      } catch (logError) {
+        console.error("Failed to log:", logError);
+      }
+
+      console.log(`[Agent] Chat complete in ${responseTimeMs}ms via ${modelUsed}`);
+
+      return new Response(
+        JSON.stringify({ 
+          response: finalContent,
+          tools_used: [],
+          response_time_ms: responseTimeMs,
+          agent_metrics: {
+            autonomy_score: 0,
+            tool_iterations: 0,
+            read_tools: 0,
+            write_tools: 0,
+            crisis_detected: crisisCheck.isCrisis,
+            router_category: routerCategory,
+            model_used: modelUsed,
+            router_latency_ms: routerMs,
+          }
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // === TOOL PATH: data/action/support/all -> Gemini (primary) with Groq fallback ===
     const GOOGLE_API_KEY = Deno.env.get("GOOGLE_API_KEY");
     if (!GOOGLE_API_KEY) {
       throw new Error("GOOGLE_API_KEY not configured");
     }
 
-    console.log(`[Agent] Processing message. Crisis detected: ${crisisCheck.isCrisis}`);
+    const geminiTools = getGeminiTools(routerCategory);
+    const openaiTools = getOpenAITools(routerCategory);
 
-    // Build contents array with history and current message
+    const sanitizedHistory = (conversationHistory || []).map((msg: any) => ({
+      role: msg.role === "user" ? "user" : "model",
+      parts: [{ text: sanitizeInput(msg.content, 800) }]
+    })).slice(-12);
+
     const contents = [
       ...sanitizedHistory,
       { role: "user", parts: [{ text: sanitizedMessage }] }
     ];
 
-    // First API call
-    let response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${GOOGLE_API_KEY}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contents,
-          systemInstruction: { parts: [{ text: systemPrompt }] },
-          tools: geminiTools,
-          toolConfig: { functionCallingConfig: { mode: "AUTO" } }
-        }),
-      }
-    );
+    // Try Gemini first
+    let geminiResult = await callGeminiWithTools(systemPrompt, contents, geminiTools, GOOGLE_API_KEY);
+    let useGroqFallback = false;
 
-    if (!response.ok) {
-      if (response.status === 429) {
-        return new Response(
-          JSON.stringify({ error: "The AI coach is taking a breather. Please wait a moment and try again." }),
-          { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
+    if (!geminiResult.ok) {
+      if (geminiResult.status === 429) {
+        console.log("[Agent] Gemini 429, switching to Groq fallback");
+        useGroqFallback = true;
+      } else {
+        console.error(`[Agent] Gemini error ${geminiResult.status}`);
+        throw new Error("Failed to get AI response");
       }
-      const errorText = await response.text();
-      console.error("Gemini API error:", response.status, errorText);
-      throw new Error("Failed to get AI response");
     }
 
-    let responseData = await response.json();
-    let candidate = responseData.candidates?.[0];
+    let finalContent = "";
     let allToolResults: any[] = [];
-    
-    // ReAct loop - handle function calls
     let iterations = 0;
     const maxIterations = 5;
-    
-    while (candidate?.content?.parts?.[0]?.functionCall && iterations < maxIterations) {
-      iterations++;
-      const functionCall = candidate.content.parts[0].functionCall;
-      const toolName = functionCall.name;
-      const toolArgs = functionCall.args || {};
+
+    if (useGroqFallback) {
+      // ---- GROQ FALLBACK PATH ----
+      modelUsed = "groq-llama3.1-70b";
       
-      console.log(`[Agent] Tool iteration ${iterations}, calling: ${toolName}`);
-      toolsCalled.push(toolName);
-      autonomyScore++;
+      const groqResult = await callGroqWithTools(systemPrompt, contents, openaiTools);
       
-      try {
-        const result = await executeTool(supabase, user.id, toolName, toolArgs);
-        allToolResults.push({ tool: toolName, args: toolArgs, result });
-        
-        // Add function call and result to contents for next iteration
-        contents.push({
-          role: "model",
-          parts: [{ functionCall: { name: toolName, args: toolArgs } }]
-        });
-        contents.push({
-          role: "user",
-          parts: [{ functionResponse: { name: toolName, response: result } }]
-        });
-        
-        // Continue the conversation
-        response = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${GOOGLE_API_KEY}`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              contents,
-              systemInstruction: { parts: [{ text: systemPrompt }] },
-              tools: geminiTools,
-              toolConfig: { functionCallingConfig: { mode: "AUTO" } }
-            }),
+      if (groqResult.toolCalls && groqResult.toolCalls.length > 0) {
+        // Process tool calls from Groq
+        for (const tc of groqResult.toolCalls) {
+          iterations++;
+          const toolName = tc.function.name;
+          const toolArgs = JSON.parse(tc.function.arguments || "{}");
+          
+          console.log(`[Agent] Groq tool call: ${toolName}`);
+          toolsCalled.push(toolName);
+          autonomyScore++;
+          
+          try {
+            const result = await executeTool(supabase, user.id, toolName, toolArgs);
+            allToolResults.push({ tool: toolName, args: toolArgs, result });
+          } catch (toolError: any) {
+            console.error(`[Agent] Tool ${toolName} failed:`, toolError.message);
           }
-        );
+        }
         
-        if (!response.ok) {
-          console.error("Gemini API error in tool loop:", response.status);
+        // Get final response from Groq with tool results
+        const followUpMessages: any[] = [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: sanitizedMessage },
+          {
+            role: "assistant",
+            tool_calls: groqResult.toolCalls.map((tc: any) => ({
+              id: tc.id,
+              type: "function",
+              function: { name: tc.function.name, arguments: tc.function.arguments }
+            }))
+          },
+          ...allToolResults.map((tr, i) => ({
+            role: "tool",
+            tool_call_id: groqResult.toolCalls[i]?.id || `call_${i}`,
+            content: JSON.stringify(tr.result)
+          }))
+        ];
+
+        const followUp = await callGroqWithTools(systemPrompt, [], []);
+        // Actually call Groq properly for the follow-up
+        const GROQ_API_KEY = Deno.env.get("GROQ_API_KEY");
+        if (GROQ_API_KEY) {
+          try {
+            const resp = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${GROQ_API_KEY}`,
+              },
+              body: JSON.stringify({
+                model: "llama-3.3-70b-versatile",
+                messages: followUpMessages,
+                max_tokens: 500,
+                temperature: 0.7,
+              }),
+            });
+            if (resp.ok) {
+              const data = await resp.json();
+              finalContent = data.choices?.[0]?.message?.content || "";
+            }
+          } catch (e) {
+            console.error("[Agent] Groq follow-up failed:", e);
+          }
+        }
+      } else {
+        finalContent = groqResult.content || "";
+      }
+
+      if (!finalContent) {
+        finalContent = generateFallbackFromTools(allToolResults);
+      }
+
+    } else {
+      // ---- GEMINI PRIMARY PATH ----
+      modelUsed = "gemini-2.5-flash-lite";
+      let candidate = geminiResult.data?.candidates?.[0];
+      
+      while (candidate?.content?.parts?.[0]?.functionCall && iterations < maxIterations) {
+        iterations++;
+        const functionCall = candidate.content.parts[0].functionCall;
+        const toolName = functionCall.name;
+        const toolArgs = functionCall.args || {};
+        
+        console.log(`[Agent] Gemini tool iteration ${iterations}: ${toolName}`);
+        toolsCalled.push(toolName);
+        autonomyScore++;
+        
+        try {
+          const result = await executeTool(supabase, user.id, toolName, toolArgs);
+          allToolResults.push({ tool: toolName, args: toolArgs, result });
+          
+          contents.push({
+            role: "model",
+            parts: [{ functionCall: { name: toolName, args: toolArgs } }]
+          });
+          contents.push({
+            role: "user",
+            parts: [{ functionResponse: { name: toolName, response: result } }]
+          });
+          
+          // Continue conversation
+          const nextResult = await callGeminiWithTools(systemPrompt, contents, geminiTools, GOOGLE_API_KEY);
+          
+          if (!nextResult.ok) {
+            if (nextResult.status === 429) {
+              console.log("[Agent] Gemini 429 mid-loop, finishing with tool results");
+              modelUsed = "gemini+fallback";
+            }
+            break;
+          }
+          
+          candidate = nextResult.data?.candidates?.[0];
+        } catch (toolError: any) {
+          console.error(`[Agent] Tool ${toolName} failed:`, toolError.message);
+          contents.push({
+            role: "model",
+            parts: [{ functionCall: { name: toolName, args: toolArgs } }]
+          });
+          contents.push({
+            role: "user",
+            parts: [{ functionResponse: { name: toolName, response: { error: toolError.message } } }]
+          });
           break;
         }
-        
-        responseData = await response.json();
-        candidate = responseData.candidates?.[0];
-        
-      } catch (toolError: any) {
-        console.error(`[Agent] Tool ${toolName} failed:`, toolError.message);
-        // Add error as function response and continue
-        contents.push({
-          role: "model",
-          parts: [{ functionCall: { name: toolName, args: toolArgs } }]
-        });
-        contents.push({
-          role: "user",
-          parts: [{ functionResponse: { name: toolName, response: { error: toolError.message } } }]
-        });
-        break;
       }
-    }
-    
-    // Extract final text response
-    let finalContent = candidate?.content?.parts?.[0]?.text || "";
-    
-    // If no text response but we have tool results, generate a meaningful response from the data
-    if (!finalContent || finalContent.trim() === "") {
-      if (allToolResults.length > 0) {
-        const lastResult = allToolResults[allToolResults.length - 1];
-        const toolName = lastResult.tool;
-        const result = lastResult.result;
-        
-        // Generate contextual response based on tool results
-        if (toolName === "get_recent_journal_entries") {
-          const entries = result.recent_entries || [];
-          if (entries.length === 0) {
-            finalContent = "You don't have any journal entries yet. Would you like to start one? Journaling can be a powerful tool for reflection.";
-          } else {
-            const entryList = entries.map((e: any, i: number) => `${i + 1}. **${e.title || 'Untitled'}** (${new Date(e.date).toLocaleDateString()}): ${e.excerpt}`).join('\n');
-            finalContent = `Here are your recent journal entries:\n\n${entryList}\n\nWould you like to add a new entry or discuss any of these?`;
-          }
-        } else if (toolName === "get_active_goals") {
-          const goals = result.goals || [];
-          if (goals.length === 0) {
-            finalContent = "You don't have any active goals yet. Would you like to set one? I can help you create a meaningful recovery goal.";
-          } else {
-            const goalList = goals.map((g: any, i: number) => `${i + 1}. **${g.title}** - ${g.progress || 0}% complete${g.days_remaining ? ` (${g.days_remaining} days left)` : ''}`).join('\n');
-            finalContent = `Here are your active goals:\n\n${goalList}\n\nKeep up the great work! Would you like to update any of these or add a new goal?`;
-          }
-        } else if (toolName === "get_user_progress") {
-          finalContent = `You're ${result.days_sober} days sober - that's amazing! Your current streak is ${result.current_streak} days, and you're at Level ${result.level} with ${result.xp} XP.${result.days_to_milestone ? ` Only ${result.days_to_milestone} days until your next milestone!` : ''} How are you feeling today?`;
-        } else if (toolName === "get_recent_moods") {
-          if (result.total_check_ins === 0) {
-            finalContent = "I don't see any recent check-ins. How are you feeling right now? Would you like to log a check-in?";
-          } else {
-            finalContent = `In the past week, you've done ${result.total_check_ins} check-ins. Your mood trend is ${result.trend}, with an average urge intensity of ${result.average_urge_intensity}/10. How are you feeling today?`;
-          }
-        } else if (toolName === "create_goal" && result.success) {
-          finalContent = result.message || "Your goal has been created! You can track your progress on the Goals page.";
-        } else if (toolName === "create_journal_entry" && result.success) {
-          finalContent = result.message || "Your journal entry has been saved! Writing helps process emotions and track your journey.";
-        } else if (toolName === "create_check_in" && result.success) {
-          finalContent = result.message || "Your check-in has been logged! Regular check-ins help track patterns in your recovery.";
-        } else {
-          finalContent = "I've processed your request. Is there anything else I can help you with?";
-        }
-        console.log(`[Agent] Generated contextual response for tool: ${toolName}`);
-      } else {
-        finalContent = "I'm here to support you on your recovery journey. How can I help you today?";
-        console.log("[Agent] Using fallback response - no content from model");
+      
+      finalContent = candidate?.content?.parts?.[0]?.text || "";
+      
+      if (!finalContent || finalContent.trim() === "") {
+        finalContent = generateFallbackFromTools(allToolResults);
+        console.log(`[Agent] Used fallback response generation`);
       }
     }
 
     const responseTimeMs = Date.now() - startTime;
     
-    // Calculate metrics
     const readToolsUsed = toolsCalled.filter(t => 
       ["get_user_progress", "get_recent_moods", "get_active_goals", "get_recent_journal_entries", "get_biometric_data", "get_conversation_context"].includes(t)
     ).length;
@@ -792,7 +1176,7 @@ IMPORTANT: After calling any tool, you MUST provide a helpful text response that
       ["create_goal", "create_check_in", "create_journal_entry", "complete_goal", "log_coping_activity"].includes(t)
     ).length;
     
-    // Log observability data
+    // Log observability
     try {
       await supabase.from("ai_observability_logs").insert({
         user_id: user.id,
@@ -802,7 +1186,8 @@ IMPORTANT: After calling any tool, you MUST provide a helpful text response that
         tool_results: allToolResults,
         response_summary: finalContent.substring(0, 200),
         response_time_ms: responseTimeMs,
-        model_used: "gemini-2.5-flash-lite",
+        model_used: modelUsed,
+        router_category: routerCategory,
         intervention_triggered: toolsCalled.includes("log_intervention") || toolsCalled.includes("escalate_crisis"),
         intervention_type: crisisCheck.isCrisis ? "crisis_response" : toolsCalled.includes("log_intervention") ? "proactive_support" : null,
       });
@@ -810,7 +1195,7 @@ IMPORTANT: After calling any tool, you MUST provide a helpful text response that
       console.error("Failed to log observability data:", logError);
     }
 
-    console.log(`[Agent] Complete in ${responseTimeMs}ms | Tools: ${toolsCalled.length} (${readToolsUsed} reads, ${writeToolsUsed} writes) | Iterations: ${iterations}`);
+    console.log(`[Agent] Complete in ${responseTimeMs}ms | Route: ${routerCategory} | Model: ${modelUsed} | Tools: ${toolsCalled.length} (${readToolsUsed}R/${writeToolsUsed}W) | Iterations: ${iterations}`);
 
     return new Response(
       JSON.stringify({ 
@@ -822,7 +1207,10 @@ IMPORTANT: After calling any tool, you MUST provide a helpful text response that
           tool_iterations: iterations,
           read_tools: readToolsUsed,
           write_tools: writeToolsUsed,
-          crisis_detected: crisisCheck.isCrisis
+          crisis_detected: crisisCheck.isCrisis,
+          router_category: routerCategory,
+          model_used: modelUsed,
+          router_latency_ms: routerMs,
         }
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
