@@ -6,6 +6,54 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+const FALLBACK_MESSAGES = [
+  "Every day sober is a victory. You're stronger than you know!",
+  "Your journey matters. One day at a time, you're building a better future.",
+  "Recovery is progress, not perfection. You're doing great!",
+  "Strength doesn't come from what you can do. It comes from overcoming the things you thought you couldn't.",
+  "You've already proven you can do hard things. Keep going!",
+];
+
+// Call Cerebras Llama 3.1 70B as fallback
+async function callCerebras(prompt: string): Promise<string | null> {
+  const CEREBRAS_API_KEY = Deno.env.get("CEREBRAS_API_KEY");
+  if (!CEREBRAS_API_KEY) return null;
+
+  try {
+    const response = await fetch("https://api.cerebras.ai/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${CEREBRAS_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model: "llama3.1-70b",
+        messages: [
+          { role: "system", content: "You generate short, inspiring motivational messages for people in addiction recovery. Keep messages under 100 characters, positive, and encouraging. Respond with ONLY the message, no quotes." },
+          { role: "user", content: prompt }
+        ],
+        max_tokens: 100,
+        temperature: 0.8,
+      }),
+    });
+
+    if (!response.ok) {
+      console.error(`[generate-motivation] Cerebras error ${response.status}`);
+      return null;
+    }
+
+    const data = await response.json();
+    const text = data.choices?.[0]?.message?.content?.trim();
+    if (text && text.length > 20 && text.length < 200) {
+      return text.replace(/^["']|["']$/g, '');
+    }
+    return null;
+  } catch (error) {
+    console.error("[generate-motivation] Cerebras failed:", error);
+    return null;
+  }
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -39,124 +87,99 @@ serve(async (req) => {
       );
     }
 
-    console.log(`[generate-motivation] User: ${user.id}`);
-
-    // Get user's profile
     const { data: profile } = await supabase
       .from("profiles")
       .select("addiction_type, sobriety_start_date")
       .eq("id", user.id)
       .single();
 
-    // Calculate days sober
     const daysSober = Math.floor(
       (new Date().getTime() - new Date(profile?.sobriety_start_date || new Date()).getTime()) / (1000 * 60 * 60 * 24)
     );
 
-    console.log(`[generate-motivation] Days sober: ${daysSober}, addiction: ${profile?.addiction_type}`);
-
-    const GOOGLE_API_KEY = Deno.env.get("GOOGLE_API_KEY");
-    if (!GOOGLE_API_KEY) {
-      console.error("[generate-motivation] GOOGLE_API_KEY not configured");
-      throw new Error("GOOGLE_API_KEY not configured");
-    }
-
     const prompt = `Generate a short, inspiring motivational message for someone in recovery from ${profile?.addiction_type || "addiction"}. They are ${daysSober} days into their journey. Keep it under 100 characters, positive, and encouraging.`;
 
-    console.log("[generate-motivation] Calling Gemini API...");
+    let message: string | null = null;
+    let modelUsed = "unknown";
 
-    try {
-      const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${GOOGLE_API_KEY}`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: prompt }] }],
-            generationConfig: {
-              maxOutputTokens: 100
+    // ---- PRIMARY: Gemini 2.5 Flash Lite ----
+    const GOOGLE_API_KEY = Deno.env.get("GOOGLE_API_KEY");
+    if (GOOGLE_API_KEY) {
+      try {
+        console.log("[generate-motivation] Trying Gemini...");
+        const response = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${GOOGLE_API_KEY}`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              contents: [{ parts: [{ text: prompt }] }],
+              generationConfig: { maxOutputTokens: 100 }
+            }),
+          }
+        );
+
+        if (response.ok) {
+          const data = await response.json();
+          const generatedText = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+          if (generatedText) {
+            let generated = generatedText.replace(/^["']|["']$/g, '');
+            if (generated.length > 20 && generated.length < 200) {
+              message = generated;
+              if (!/[.!?]$/.test(message)) message += '.';
+              modelUsed = "gemini-2.5-flash-lite";
+            } else {
+              const firstSentence = generated.split(/[.!?]/)[0];
+              if (firstSentence && firstSentence.length > 20) {
+                message = firstSentence + '.';
+                modelUsed = "gemini-2.5-flash-lite";
+              }
             }
-          }),
-        }
-      );
-
-      const responseTime = Date.now() - startTime;
-      console.log(`[generate-motivation] API response in ${responseTime}ms, status: ${response.status}`);
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error(`[generate-motivation] API error:`, errorText);
-        
-        if (response.status === 429) {
-          return new Response(
-            JSON.stringify({ error: "Rate limit exceeded. Please try again in a moment." }),
-            { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-          );
-        }
-        
-        throw new Error(`AI API error: ${response.status}`);
-      }
-
-      const data = await response.json();
-      console.log(`[generate-motivation] Raw AI response:`, JSON.stringify(data));
-      
-      let message = "Every day is a victory. Keep moving forward!";
-      
-      const generatedText = data.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (generatedText) {
-        let generated = generatedText.trim();
-        
-        // Remove quotes if present
-        generated = generated.replace(/^["']|["']$/g, '');
-        
-        // If the message is already a good length, use it
-        if (generated.length > 20 && generated.length < 200) {
-          message = generated;
-          // Ensure it ends with punctuation
-          if (!/[.!?]$/.test(message)) {
-            message += '.';
           }
+        } else if (response.status === 429) {
+          console.log("[generate-motivation] Gemini 429, trying Cerebras fallback...");
         } else {
-          // Try to extract first sentence
-          const firstSentence = generated.split(/[.!?]/)[0];
-          if (firstSentence && firstSentence.length > 20) {
-            message = firstSentence + '.';
-          }
+          console.error(`[generate-motivation] Gemini error ${response.status}`);
         }
+      } catch (error) {
+        console.error("[generate-motivation] Gemini failed:", error);
       }
-
-      console.log(`[generate-motivation] Success! Generated: "${message}"`);
-      
-      return new Response(
-        JSON.stringify({ message }),
-        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    } catch (error) {
-      console.error("[generate-motivation] AI API error:", error);
-      
-      // Return fallback message
-      const fallbackMessages = [
-        "Every day sober is a victory. You're stronger than you know!",
-        `${daysSober} days of courage and determination. Keep going!`,
-        "Your journey matters. One day at a time, you're building a better future.",
-        "Recovery is progress, not perfection. You're doing great!",
-      ];
-      
-      return new Response(
-        JSON.stringify({ 
-          message: fallbackMessages[Math.floor(Math.random() * fallbackMessages.length)]
-        }),
-        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
     }
+
+    // ---- FALLBACK: Cerebras Llama 3.1 70B ----
+    if (!message) {
+      console.log("[generate-motivation] Trying Cerebras fallback...");
+      message = await callCerebras(prompt);
+      if (message) {
+        modelUsed = "cerebras-llama3.1-70b";
+        if (!/[.!?]$/.test(message)) message += '.';
+      }
+    }
+
+    // ---- STATIC FALLBACK ----
+    if (!message) {
+      const dynamicFallbacks = [
+        ...FALLBACK_MESSAGES,
+        `${daysSober} days of courage and determination. Keep going!`,
+      ];
+      message = dynamicFallbacks[Math.floor(Math.random() * dynamicFallbacks.length)];
+      modelUsed = "fallback-static";
+    }
+
+    const responseTime = Date.now() - startTime;
+    console.log(`[generate-motivation] Success via ${modelUsed} in ${responseTime}ms: "${message}"`);
+    
+    return new Response(
+      JSON.stringify({ message }),
+      { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
   } catch (error: any) {
     console.error("[generate-motivation] Error:", error);
     return new Response(
       JSON.stringify({ 
-        error: error.message,
-        timestamp: new Date().toISOString()
+        message: FALLBACK_MESSAGES[Math.floor(Math.random() * FALLBACK_MESSAGES.length)]
       }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }
 });
