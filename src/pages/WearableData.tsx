@@ -121,24 +121,38 @@ export default function WearableData() {
         }
       );
 
-      if (!response.ok) throw new Error("Failed to sync Fitbit data");
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || "Failed to sync Fitbit data");
+      }
       return response.json();
     },
     onSuccess: (data) => {
+      // Invalidate all biometric queries including the dashboard health status card
       queryClient.invalidateQueries({ queryKey: ["biometric-logs"] });
+      queryClient.invalidateQueries({ queryKey: ["health-status-biometrics"] });
+      const d = data.data;
+      const parts: string[] = [];
+      if (d?.steps) parts.push(`${d.steps} steps`);
+      if (d?.sleep_hours) parts.push(`${d.sleep_hours.toFixed(1)}h sleep`);
+      if (d?.heart_rate) parts.push(`${d.heart_rate} bpm`);
       toast({
         title: "Fitbit Synced!",
-        description: `Latest data: ${data.data.steps} steps, ${data.data.sleep_hours.toFixed(1)}h sleep, ${data.data.heart_rate} bpm`,
+        description: parts.length > 0 ? `Latest data: ${parts.join(", ")}` : "Data synced successfully.",
       });
     },
     onError: (error: any) => {
       const message = error?.message || "Could not sync Fitbit data.";
       const needsReconnect = message.includes("not connected") || message.includes("reconnect");
+      // If sync fails due to disconnection, refresh the profile state
+      if (needsReconnect) {
+        queryClient.invalidateQueries({ queryKey: ["profile-wearable"] });
+      }
       toast({
         title: "Sync Failed",
         description: needsReconnect 
           ? "Your Fitbit connection needs to be refreshed. Please disconnect and reconnect."
-          : "Could not sync Fitbit data. Please try again.",
+          : message,
         variant: "destructive",
       });
     },
@@ -267,7 +281,10 @@ export default function WearableData() {
 
       if (!response.ok) throw new Error("Failed to disconnect Fitbit");
 
+      // Invalidate all related queries to reflect disconnected state everywhere
       queryClient.invalidateQueries({ queryKey: ["profile-wearable"] });
+      queryClient.invalidateQueries({ queryKey: ["health-status-biometrics"] });
+      queryClient.invalidateQueries({ queryKey: ["biometric-logs"] });
       toast({
         title: "Fitbit Disconnected",
         description: "Your Fitbit account has been unlinked. You can reconnect anytime.",

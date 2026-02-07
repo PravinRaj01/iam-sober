@@ -37,6 +37,7 @@ const Settings = () => {
   const { toast } = useToast();
   const { setBackgroundImage: setGlobalBackground } = useBackground();
   const queryClient = useQueryClient();
+  const { language, setLanguage, t } = useLanguage();
   const [loading, setLoading] = useState(false);
   const [resetLoading, setResetLoading] = useState(false);
   const [deleteLoading, setDeleteLoading] = useState(false);
@@ -173,10 +174,11 @@ const Settings = () => {
     retry: false,
   });
 
-  if (error && error.message.includes("auth")) {
-    navigate("/auth");
-    return null;
-  }
+  useEffect(() => {
+    if (error && error.message.includes("auth")) {
+      navigate("/auth");
+    }
+  }, [error, navigate]);
 
   const handleUpdateProfile = async () => {
     setLoading(true);
@@ -385,8 +387,6 @@ const Settings = () => {
     
     setLastTapTime(now);
   }, [tapCount, lastTapTime, toast, navigate]);
-
-  const { language, setLanguage, t } = useLanguage();
 
   return (
     <div className="min-h-screen bg-background">
