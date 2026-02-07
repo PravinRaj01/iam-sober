@@ -25,7 +25,10 @@ import {
   Shield,
   Zap,
   Activity,
-  AlertTriangle
+  AlertTriangle,
+  Globe,
+  ArrowRight,
+  Languages
 } from "lucide-react";
 import { format, formatDistanceToNow, differenceInDays, subDays } from "date-fns";
 import {
@@ -97,6 +100,22 @@ const TOOL_CATEGORIES = {
     ]
   }
 };
+
+// Model roster for the router architecture
+const MODEL_ROSTER = [
+  { name: "Groq Llama 3.1 8B", role: "Intent Router", languages: "All", speed: "~100-200ms", color: "text-orange-500" },
+  { name: "SEA-LION v4 27B", role: "Regional Primary (tools + chat)", languages: "Malay, Tamil, Tanglish", speed: "~800ms", color: "text-teal-500" },
+  { name: "Sarvam-M 24B", role: "Tamil Deep Reasoning", languages: "Tamil, Tanglish", speed: "~1.2s", color: "text-pink-500" },
+  { name: "Groq Llama 3.3 70B", role: "English Primary (tools) + Fallback", languages: "All", speed: "~400ms", color: "text-orange-500" },
+  { name: "Cerebras Llama 3.3 70B", role: "English Primary (chat)", languages: "English", speed: "~300ms", color: "text-blue-500" },
+  { name: "Gemini 2.5 Flash Lite", role: "Last-resort Fallback", languages: "All", speed: "~600ms", color: "text-yellow-500" },
+];
+
+const FALLBACK_CHAINS = [
+  { lang: "🇲🇾 Malay", tools: ["SEA-LION", "Groq 3.3 70B", "Gemini Flash Lite"], chat: ["SEA-LION", "Cerebras", "Groq 3.3 70B"] },
+  { lang: "🇮🇳 Tamil", tools: ["SEA-LION", "Groq 3.3 70B", "Gemini Flash Lite"], chat: ["Sarvam-M (Thinking)", "SEA-LION", "Cerebras"] },
+  { lang: "🇬🇧 English", tools: ["Groq 3.3 70B", "Gemini Flash Lite", "Static"], chat: ["Cerebras", "Groq 3.3 70B", "Gemini"] },
+];
 
 const AGENT_FEATURES = [
   {
@@ -330,17 +349,21 @@ const AIObservability = () => {
                         </Badge>
                       </div>
                       <p className="text-muted-foreground mb-4 max-w-2xl">
-                        Powered by Llama 3.3 70B with ReAct (Reasoning + Acting) architecture. 
-                        This agent autonomously decides when to read data, take actions, and provide proactive support.
+                        Regional Hybrid Router architecture with multi-model fallback chains. 
+                        Supports English, Malay &amp; Tamil with specialized models per language for both tool-calling and conversational paths.
                       </p>
                       <div className="flex flex-wrap gap-2">
                         <Badge variant="secondary" className="text-xs">
                           <Brain className="h-3 w-3 mr-1" />
-                          15 Tools Available
+                          6 Models
                         </Badge>
                         <Badge variant="secondary" className="text-xs">
-                          <Zap className="h-3 w-3 mr-1" />
-                          5-Step Reasoning Chain
+                          <Languages className="h-3 w-3 mr-1" />
+                          3 Languages
+                        </Badge>
+                        <Badge variant="secondary" className="text-xs">
+                          <Wrench className="h-3 w-3 mr-1" />
+                          15 Tools
                         </Badge>
                         <Badge variant="secondary" className="text-xs">
                           <Shield className="h-3 w-3 mr-1" />
@@ -492,39 +515,106 @@ const AIObservability = () => {
                 </Card>
               )}
 
-              {/* Architecture Diagram */}
+              {/* Regional Hybrid Router Architecture */}
               <Card>
                 <CardHeader>
                   <CardTitle className="text-base flex items-center gap-2">
-                    <Brain className="h-4 w-4 text-primary" />
-                    ReAct Agent Architecture
+                    <Globe className="h-4 w-4 text-primary" />
+                    Regional Hybrid Router Architecture
                   </CardTitle>
                   <CardDescription className="text-xs">
-                    How the AI agent processes requests and makes decisions
+                    Multi-model routing with language detection and 3-tier fallback chains
                   </CardDescription>
                 </CardHeader>
-                <CardContent>
-                  <div className="flex flex-col md:flex-row items-center justify-between gap-4 py-4">
-                    {[
-                      { step: 1, title: "User Message", icon: MessageCircle, desc: "Input received" },
-                      { step: 2, title: "Reasoning", icon: Brain, desc: "Analyze intent" },
-                      { step: 3, title: "Tool Selection", icon: Wrench, desc: "Choose tools" },
-                      { step: 4, title: "Execution", icon: Zap, desc: "Call tools (1-5x)" },
-                      { step: 5, title: "Response", icon: CheckCircle2, desc: "Synthesize answer" },
-                    ].map((item, index, arr) => (
-                      <div key={item.step} className="flex items-center gap-2">
-                        <div className="flex flex-col items-center text-center">
-                          <div className="p-3 rounded-xl bg-primary/10 mb-2">
-                            <item.icon className="h-6 w-6 text-primary" />
-                          </div>
-                          <p className="font-medium text-sm">{item.title}</p>
-                          <p className="text-xs text-muted-foreground">{item.desc}</p>
-                        </div>
-                        {index < arr.length - 1 && (
-                          <div className="hidden md:block text-muted-foreground">→</div>
-                        )}
+                <CardContent className="space-y-6">
+                  {/* Router Flow */}
+                  <div className="flex flex-col items-center gap-3">
+                    {/* Step 1: User Message */}
+                    <div className="flex flex-col items-center text-center">
+                      <div className="p-3 rounded-xl bg-primary/10">
+                        <MessageCircle className="h-6 w-6 text-primary" />
                       </div>
-                    ))}
+                      <p className="font-medium text-sm mt-1">User Message</p>
+                    </div>
+                    <ArrowRight className="h-4 w-4 text-muted-foreground rotate-90" />
+                    
+                    {/* Step 2: Intent Router */}
+                    <div className="w-full max-w-md p-4 rounded-xl border-2 border-primary/30 bg-primary/5 text-center">
+                      <div className="flex items-center justify-center gap-2 mb-1">
+                        <Brain className="h-5 w-5 text-primary" />
+                        <p className="font-semibold">Intent Router</p>
+                      </div>
+                      <p className="text-xs text-muted-foreground">Groq Llama 3.1 8B · ~100-200ms</p>
+                      <div className="flex flex-wrap justify-center gap-1.5 mt-2">
+                        {["DATA (6)", "ACTION (5)", "SUPPORT (3)", "CHAT (0)"].map(cat => (
+                          <Badge key={cat} variant="outline" className="text-[10px]">{cat}</Badge>
+                        ))}
+                      </div>
+                    </div>
+                    <ArrowRight className="h-4 w-4 text-muted-foreground rotate-90" />
+
+                    {/* Step 3: Language Detection */}
+                    <div className="w-full max-w-md p-4 rounded-xl border-2 border-accent/30 bg-accent/5 text-center">
+                      <div className="flex items-center justify-center gap-2 mb-1">
+                        <Languages className="h-5 w-5 text-accent-foreground" />
+                        <p className="font-semibold">Language Detector</p>
+                      </div>
+                      <p className="text-xs text-muted-foreground">Profile pref → Script regex → Keyword analysis</p>
+                    </div>
+                    <ArrowRight className="h-4 w-4 text-muted-foreground rotate-90" />
+
+                    {/* Step 4: Language Branches */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3 w-full">
+                      {FALLBACK_CHAINS.map(chain => (
+                        <div key={chain.lang} className="p-3 rounded-xl border bg-card/80 space-y-2">
+                          <p className="font-semibold text-sm text-center">{chain.lang}</p>
+                          <div className="space-y-1.5">
+                            <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Tool Path</p>
+                            <div className="flex items-center gap-1 flex-wrap">
+                              {chain.tools.map((m, i) => (
+                                <span key={m} className="flex items-center gap-0.5">
+                                  <Badge variant="secondary" className="text-[10px] px-1.5 py-0">{m}</Badge>
+                                  {i < chain.tools.length - 1 && <ArrowRight className="h-3 w-3 text-muted-foreground shrink-0" />}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                          <div className="space-y-1.5">
+                            <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Chat Path</p>
+                            <div className="flex items-center gap-1 flex-wrap">
+                              {chain.chat.map((m, i) => (
+                                <span key={m} className="flex items-center gap-0.5">
+                                  <Badge variant="outline" className="text-[10px] px-1.5 py-0">{m}</Badge>
+                                  {i < chain.chat.length - 1 && <ArrowRight className="h-3 w-3 text-muted-foreground shrink-0" />}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Model Roster Table */}
+                  <div>
+                    <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
+                      <Bot className="h-4 w-4 text-primary" />
+                      Model Roster
+                    </h3>
+                    <div className="grid gap-2">
+                      {MODEL_ROSTER.map(model => (
+                        <div key={model.name} className="flex items-center justify-between p-3 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors">
+                          <div className="flex-1 min-w-0">
+                            <p className="font-medium text-sm truncate">{model.name}</p>
+                            <p className="text-xs text-muted-foreground">{model.role}</p>
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <Badge variant="outline" className="text-[10px]">{model.languages}</Badge>
+                            <Badge variant="secondary" className="text-[10px]">{model.speed}</Badge>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 </CardContent>
               </Card>

@@ -9,7 +9,7 @@ import { useNavigate } from "react-router-dom";
 export const HealthStatusCard = () => {
   const navigate = useNavigate();
 
-  const { data: biometrics, isLoading, refetch } = useQuery({
+  const { data: biometrics, isLoading, refetch, isFetching } = useQuery({
     queryKey: ["health-status-biometrics"],
     queryFn: async () => {
       const { data: { user } } = await supabase.auth.getUser();
@@ -28,6 +28,7 @@ export const HealthStatusCard = () => {
       if (error) throw error;
       return data;
     },
+    refetchOnWindowFocus: true,
   });
 
   if (isLoading) {
@@ -90,8 +91,9 @@ export const HealthStatusCard = () => {
             size="sm" 
             className="h-8 w-8 p-0"
             onClick={() => refetch()}
+            disabled={isFetching}
           >
-            <RefreshCw className="h-3 w-3" />
+            <RefreshCw className={`h-3 w-3 ${isFetching ? 'animate-spin' : ''}`} />
           </Button>
         </div>
         <p className="text-xs text-muted-foreground">Last sync: {lastSyncTime}</p>
