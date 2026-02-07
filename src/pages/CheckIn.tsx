@@ -10,14 +10,7 @@ import { Slider } from "@/components/ui/slider";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2, Flame } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
-
-const moods = [
-  { value: "Great", emoji: "😊", label: "Great", bgSelected: "bg-green-500/20", borderSelected: "border-green-500", textColor: "text-green-600" },
-  { value: "Good", emoji: "🙂", label: "Good", bgSelected: "bg-lime-500/20", borderSelected: "border-lime-500", textColor: "text-lime-600" },
-  { value: "Okay", emoji: "😐", label: "Okay", bgSelected: "bg-yellow-500/20", borderSelected: "border-yellow-500", textColor: "text-yellow-600" },
-  { value: "Struggling", emoji: "😔", label: "Struggling", bgSelected: "bg-orange-500/20", borderSelected: "border-orange-500", textColor: "text-orange-600" },
-  { value: "Difficult", emoji: "😢", label: "Difficult", bgSelected: "bg-red-500/20", borderSelected: "border-red-500", textColor: "text-red-600" },
-];
+import { useLanguage } from "@/contexts/LanguageContext";
 
 const CheckIn = () => {
   const [selectedMood, setSelectedMood] = useState("Okay");
@@ -26,6 +19,15 @@ const CheckIn = () => {
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { t } = useLanguage();
+
+  const moods = [
+    { value: "Great", emoji: "😊", label: t("checkIn.mood.great"), bgSelected: "bg-green-500/20", borderSelected: "border-green-500", textColor: "text-green-600" },
+    { value: "Good", emoji: "🙂", label: t("checkIn.mood.good"), bgSelected: "bg-lime-500/20", borderSelected: "border-lime-500", textColor: "text-lime-600" },
+    { value: "Okay", emoji: "😐", label: t("checkIn.mood.okay"), bgSelected: "bg-yellow-500/20", borderSelected: "border-yellow-500", textColor: "text-yellow-600" },
+    { value: "Struggling", emoji: "😔", label: t("checkIn.mood.struggling"), bgSelected: "bg-orange-500/20", borderSelected: "border-orange-500", textColor: "text-orange-600" },
+    { value: "Difficult", emoji: "😢", label: t("checkIn.mood.difficult"), bgSelected: "bg-red-500/20", borderSelected: "border-red-500", textColor: "text-red-600" },
+  ];
 
   // Fetch current streak
   const { data: profile, refetch: refetchProfile } = useQuery({
@@ -149,7 +151,7 @@ const CheckIn = () => {
 
   return (
     <div className="flex-1 bg-gradient-calm min-h-screen">
-      <PageHeader title="Check In" />
+      <PageHeader title={t("checkIn.title")} />
 
       <main className="container mx-auto px-4 py-8 max-w-2xl animate-fade-in space-y-6">
         {/* Check-in Streak Card */}
@@ -157,10 +159,10 @@ const CheckIn = () => {
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-muted-foreground">Check-in Streak</p>
-                <p className="text-3xl font-bold text-primary">{profile?.current_streak || 0} days</p>
+                <p className="text-sm text-muted-foreground">{t("checkIn.streak")}</p>
+                <p className="text-3xl font-bold text-primary">{profile?.current_streak || 0} {t("checkIn.days")}</p>
                 <p className="text-xs text-muted-foreground mt-1">
-                  {profile?.longest_streak ? `Best: ${profile.longest_streak} days` : "Keep the streak going!"}
+                  {profile?.longest_streak ? `${t("checkIn.best")} ${profile.longest_streak} ${t("checkIn.days")}` : t("checkIn.keepGoing")}
                 </p>
               </div>
               <div className="h-12 w-12 rounded-full bg-primary/20 flex items-center justify-center">
@@ -172,13 +174,13 @@ const CheckIn = () => {
 
         <Card className="shadow-soft bg-card/50 backdrop-blur-lg">
           <CardHeader>
-            <CardTitle>Daily Check-In</CardTitle>
-            <CardDescription>How are you feeling today?</CardDescription>
+            <CardTitle>{t("checkIn.dailyTitle")}</CardTitle>
+            <CardDescription>{t("checkIn.dailySubtitle")}</CardDescription>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-6">
               <div className="space-y-4">
-                <Label className="text-base">How are you feeling?</Label>
+                <Label className="text-base">{t("checkIn.howFeeling")}</Label>
                 <div className="flex justify-center gap-3 sm:gap-4 flex-wrap">
                   {moods.map((mood) => {
                     const isSelected = selectedMood === mood.value;
@@ -210,7 +212,7 @@ const CheckIn = () => {
 
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
-                  <Label>Urge Intensity</Label>
+                  <Label>{t("checkIn.urgeIntensity")}</Label>
                   <span className="text-2xl font-bold text-primary">{urgeIntensity[0]}/10</span>
                 </div>
                 <Slider
@@ -222,16 +224,16 @@ const CheckIn = () => {
                   className="py-4"
                 />
                 <div className="flex justify-between text-xs text-muted-foreground">
-                  <span>None</span>
-                  <span>Extreme</span>
+                  <span>{t("checkIn.none")}</span>
+                  <span>{t("checkIn.extreme")}</span>
                 </div>
               </div>
 
               <div className="space-y-3">
-                <Label htmlFor="notes">Notes (optional)</Label>
+                <Label htmlFor="notes">{t("checkIn.notes")}</Label>
                 <Textarea
                   id="notes"
-                  placeholder="How was your day? Any challenges or wins?"
+                  placeholder={t("checkIn.notesPlaceholder")}
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
                   rows={4}
@@ -247,10 +249,10 @@ const CheckIn = () => {
                 {loading ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Saving...
+                    {t("checkIn.saving")}
                   </>
                 ) : (
-                  "Save Check-In"
+                  t("checkIn.save")
                 )}
               </Button>
             </form>

@@ -6,6 +6,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { useLanguage } from "@/contexts/LanguageContext";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -40,6 +41,7 @@ const AIAgent = () => {
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const isMobile = useIsMobile();
+  const { language } = useLanguage();
   
   const [input, setInput] = useState("");
   const [streaming, setStreaming] = useState(false);
@@ -228,6 +230,7 @@ const AIAgent = () => {
           body: JSON.stringify({
             message: userInput,
             conversationHistory: conversationHistory,
+            preferred_language: language,
           }),
         }
       );

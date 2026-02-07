@@ -4,8 +4,10 @@ import { supabase } from "@/integrations/supabase/client";
 import LevelUpDialog from "@/components/LevelUpDialog";
 import { useLevelUp } from "@/hooks/useLevelUp";
 import { PageHeader } from "@/components/layout/PageHeader";
+import { useLanguage } from "@/contexts/LanguageContext";
 
 const Achievements = () => {
+  const { t } = useLanguage();
   const { data: profile } = useQuery({
     queryKey: ["profile-level"],
     queryFn: async () => {
@@ -46,13 +48,13 @@ const Achievements = () => {
 
   return (
     <div className="min-h-screen bg-background text-foreground">
-      <PageHeader title="Achievements" />
+      <PageHeader title={t("achievements.title")} />
 
       <main className="container mx-auto px-4 py-8">
         {/* Level Progress */}
         <div className="mb-8">
           <div className="flex items-end gap-2 mb-2">
-            <h1 className="text-4xl font-bold">Level {currentLevel}</h1>
+            <h1 className="text-4xl font-bold">{t("achievements.level")} {currentLevel}</h1>
             <p className="text-muted-foreground mb-1">
               {xpInCurrentLevel} / {xpNeededForNextLevel} XP
             </p>
