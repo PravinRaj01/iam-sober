@@ -1,0 +1,1 @@
+ALTER TABLE ai_observability_logs ADD COLUMN IF NOT EXISTS router_category text;

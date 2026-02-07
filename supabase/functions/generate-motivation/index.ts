@@ -27,7 +27,7 @@ async function callCerebras(prompt: string): Promise<string | null> {
         "Authorization": `Bearer ${CEREBRAS_API_KEY}`,
       },
       body: JSON.stringify({
-        model: "llama3.1-70b",
+        model: "llama-3.3-70b",
         messages: [
           { role: "system", content: "You generate short, inspiring motivational messages for people in addiction recovery. Keep messages under 100 characters, positive, and encouraging. Respond with ONLY the message, no quotes." },
           { role: "user", content: prompt }

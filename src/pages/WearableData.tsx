@@ -173,8 +173,9 @@ export default function WearableData() {
         }
       );
 
-      if (!response.ok) throw new Error("Failed to complete Fitbit authorization");
-      return response.json();
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Failed to complete Fitbit authorization");
+      return result;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["profile-wearable"] });

@@ -166,12 +166,25 @@ const ChatbotMiniView = ({
             }}
             className="flex gap-2"
           >
-            <Input
+            <textarea
               value={input}
               onChange={(e) => onInputChange(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  if (input.trim() && !streaming) onSend();
+                }
+              }}
+              onInput={(e) => {
+                const target = e.target as HTMLTextAreaElement;
+                target.style.height = 'auto';
+                target.style.height = Math.min(target.scrollHeight, 80) + 'px';
+              }}
               placeholder="Ask me anything..."
               disabled={streaming}
-              className="flex-1 bg-background/50 border-primary/20 focus:border-primary/40 transition-colors text-sm h-9"
+              rows={1}
+              className="flex-1 rounded-md border border-primary/20 bg-background/50 px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 transition-colors resize-none overflow-hidden"
+              style={{ minHeight: '36px', maxHeight: '80px' }}
             />
             <Button
               type="submit"

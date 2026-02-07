@@ -1,14 +1,12 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
-
-// VAPID public key - this is the PUBLIC key, safe to expose in client code
-const VAPID_PUBLIC_KEY = 'BJiWF4fQVaBCLGSc49uFdU326Uti7gCfwfY5X3xo26Nz3OgsjMn9aFPHjj8r4jYHE5rKhlFOCW5po1WgzyTUfiM';
 
 export const usePushNotifications = () => {
   const [isSupported, setIsSupported] = useState(false);
   const [isSubscribed, setIsSubscribed] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const vapidKeyRef = useRef<string | null>(null);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -76,6 +74,15 @@ export const usePushNotifications = () => {
     setIsLoading(true);
 
     try {
+      // Fetch VAPID key from edge function if not cached
+      if (!vapidKeyRef.current) {
+        const { data, error } = await supabase.functions.invoke('get-vapid-key');
+        if (error || !data?.vapidPublicKey) {
+          throw new Error('Failed to fetch VAPID key');
+        }
+        vapidKeyRef.current = data.vapidPublicKey;
+      }
+
       // Request notification permission
       const permission = await Notification.requestPermission();
       
@@ -99,7 +106,7 @@ export const usePushNotifications = () => {
       // Subscribe to push notifications
       const subscription = await registration.pushManager.subscribe({
         userVisibleOnly: true,
-        applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
+        applicationServerKey: urlBase64ToUint8Array(vapidKeyRef.current!),
       });
 
       // Get subscription keys

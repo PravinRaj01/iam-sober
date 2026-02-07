@@ -115,7 +115,7 @@ const AIAgent = () => {
   }, [streaming, isRecording, isProcessing]);
 
   // Handle input change with stable callback
-  const handleInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     setInput(e.target.value);
   }, []);
 

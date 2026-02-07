@@ -374,12 +374,25 @@ const ChatbotFullView = ({
         >
           <div className="flex gap-2">
             <div className="flex-1 relative">
-              <Input
+              <textarea
                 value={input}
                 onChange={(e) => onInputChange(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    if (input.trim() && !streaming) onSend();
+                  }
+                }}
+                onInput={(e) => {
+                  const target = e.target as HTMLTextAreaElement;
+                  target.style.height = 'auto';
+                  target.style.height = Math.min(target.scrollHeight, 120) + 'px';
+                }}
                 placeholder={isRecording ? "Listening..." : isProcessing ? "Processing..." : "Ask me anything..."}
                 disabled={streaming || isRecording || isProcessing}
-                className="pr-4 h-11 text-base bg-background/50 border-primary/20 focus:border-primary/40 transition-colors"
+                rows={1}
+                className="flex w-full rounded-md border border-primary/20 bg-background/50 px-3 py-2.5 text-base ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 transition-colors resize-none overflow-hidden"
+                style={{ minHeight: '44px', maxHeight: '120px' }}
               />
             </div>
             

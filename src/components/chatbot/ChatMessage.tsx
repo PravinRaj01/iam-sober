@@ -58,9 +58,16 @@ const ChatMessage = ({ role, content, isStreaming, compact = false, toolsUsed, i
           <ReactMarkdown
             components={{
               p: ({ children }) => <p className={compact ? "mb-1 last:mb-0" : "mb-2 last:mb-0"}>{children}</p>,
-              ul: ({ children }) => <ul className={compact ? "my-1 ml-3" : "my-2 ml-4"}>{children}</ul>,
-              ol: ({ children }) => <ol className={compact ? "my-1 ml-3" : "my-2 ml-4"}>{children}</ol>,
+              ul: ({ children }) => <ul className={compact ? "my-1 ml-3 list-disc" : "my-2 ml-4 list-disc"}>{children}</ul>,
+              ol: ({ children }) => <ol className={compact ? "my-1 ml-3 list-decimal" : "my-2 ml-4 list-decimal"}>{children}</ol>,
               li: ({ children }) => <li className="my-1">{children}</li>,
+              strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
+              h3: ({ children }) => <h3 className={cn("font-semibold", compact ? "text-xs mt-1" : "text-sm mt-2")}>{children}</h3>,
+              blockquote: ({ children }) => (
+                <blockquote className="border-l-2 border-primary/30 pl-3 my-2 italic opacity-80">
+                  {children}
+                </blockquote>
+              ),
               code: ({ children }) => (
                 <code className={cn("bg-background/50 rounded", compact ? "px-1 py-0.5 text-xs" : "px-1.5 py-0.5 text-sm")}>
                   {children}

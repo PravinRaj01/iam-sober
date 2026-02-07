@@ -36,12 +36,12 @@ interface ChatViewProps {
   messages: ChatMessage[] | undefined;
   messagesLoading: boolean;
   input: string;
-  handleInputChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  handleInputChange: (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => void;
   streaming: boolean;
   streamingMessage: string;
   handleSend: (message?: string) => void;
   handleClearChat: () => void;
-  inputRef: RefObject<HTMLInputElement>;
+  inputRef: RefObject<HTMLInputElement | HTMLTextAreaElement>;
   scrollRef: RefObject<HTMLDivElement>;
   isRecording: boolean;
   isProcessing: boolean;
@@ -203,13 +203,26 @@ const ChatView = memo(({
         >
           <div className="relative flex gap-2">
             <div className="flex-1 relative">
-              <Input
-                ref={inputRef}
+              <textarea
+                ref={inputRef as any}
                 value={input}
                 onChange={handleInputChange}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    if (input.trim() && !streaming) handleSend();
+                  }
+                }}
+                onInput={(e) => {
+                  const target = e.target as HTMLTextAreaElement;
+                  target.style.height = 'auto';
+                  target.style.height = Math.min(target.scrollHeight, 120) + 'px';
+                }}
                 placeholder={isRecording ? "Listening..." : isProcessing ? "Processing..." : "Ask me anything about your recovery..."}
                 disabled={streaming || isRecording || isProcessing}
-                className="pr-4 h-12 text-base bg-background/50 border-primary/20 focus:border-primary/40"
+                rows={1}
+                className="flex w-full rounded-md border border-primary/20 bg-background/50 px-3 py-3 text-base ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 transition-colors resize-none overflow-hidden"
+                style={{ minHeight: '48px', maxHeight: '120px' }}
               />
             </div>
             

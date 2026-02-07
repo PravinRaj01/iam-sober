@@ -103,7 +103,14 @@ serve(async (req) => {
       if (!tokenResponse.ok) {
         const errorText = await tokenResponse.text();
         console.error("Fitbit token exchange failed:", errorText);
-        return new Response(JSON.stringify({ error: "Failed to exchange code for token" }), {
+        console.error("Redirect URI sent:", callbackUrl);
+        console.error("Status:", tokenResponse.status);
+        let errorDetail = "Failed to exchange code for token";
+        try {
+          const parsed = JSON.parse(errorText);
+          errorDetail = parsed.errors?.[0]?.message || parsed.error_description || errorDetail;
+        } catch (_) {}
+        return new Response(JSON.stringify({ error: errorDetail, debug_redirect_uri: callbackUrl }), {
           status: 400,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });

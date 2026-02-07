@@ -2,18 +2,20 @@
  * AI COACH - Multi-Model Router Architecture with ReAct Agent
  * 
  * Architecture: 3-Layer Router
- * Layer 1: Intent Router (Groq Llama 3 8B) - ~100-200ms classification
+ * Layer 1: Intent Router (Groq Llama 3.1 8B) - ~100-200ms classification
  * Layer 2: Specialist Agents:
- *   - Chat Agent (Cerebras Llama 3.1 70B) - fast conversation, no tools
- *   - Data/Action/Support Agents (Gemini 2.5 Flash Lite) - tool-calling
- * Layer 3: Fallback (Groq Llama 3.1 70B) - when Gemini 429s
+ *   - Chat Agent (Cerebras Llama 3.3 70B) - fast conversation, no tools
+ *   - Data/Action/Support Agents (Groq Llama 3.3 70B) - PRIMARY tool-calling
+ * Layer 3: Fallback (Gemini 2.5 Flash Lite) - when Groq fails/429s
  * 
  * FEATURES:
  * ✅ Intent-based routing for optimal latency
- * ✅ Tool-subset selection (3-6 tools vs 14)
- * ✅ Multi-model fallback chain
+ * ✅ Tool-subset selection (3-9 tools vs all)
+ * ✅ Multi-model fallback chain (Groq -> Gemini -> static)
  * ✅ Crisis detection (never skipped)
  * ✅ Full observability with routing metrics
+ * ✅ tool_choice: "required" for data/action routes (anti-hallucination)
+ * ✅ Response sanitization for tool text leaks
  */
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
@@ -31,7 +33,6 @@ const CRISIS_KEYWORDS = [
   "can't go on", "give up", "no reason to live", "better off dead"
 ];
 
-// Sanitize user input to prevent prompt injection
 function sanitizeInput(input: string, maxLength: number = 5000): string {
   if (!input || typeof input !== 'string') return '';
   let sanitized = input.slice(0, maxLength).trim();
@@ -49,6 +50,22 @@ function detectCrisis(message: string): { isCrisis: boolean; matchedKeywords: st
   const lowerMessage = message.toLowerCase();
   const matchedKeywords = CRISIS_KEYWORDS.filter(keyword => lowerMessage.includes(keyword));
   return { isCrisis: matchedKeywords.length > 0, matchedKeywords };
+}
+
+// Sanitize AI output to remove internal reasoning leaks and XML tags
+function sanitizeOutput(text: string): string {
+  return text
+    // Strip raw XML function tags
+    .replace(/<function[^>]*>[\s\S]*?<\/function>/gi, '')
+    .replace(/<function=[^>]*>/gi, '')
+    .replace(/<\/function>/gi, '')
+    // Strip internal reasoning like "READ check_ins READ goals"
+    .replace(/^(READ|WRITE|CALL)\s+\w+(\s+(READ|WRITE|CALL)\s+\w+)*$/gm, '')
+    // Strip tool-name-only lines
+    .replace(/^(get_\w+|create_\w+|edit_\w+|update_\w+|delete_\w+|complete_\w+|log_\w+|suggest_\w+|escalate_\w+)\s*$/gm, '')
+    // Clean up multiple blank lines
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
 }
 
 // ============================================================
@@ -151,6 +168,56 @@ const actionToolDeclarations = [
       required: ["activity_name", "category"]
     }
   },
+  // --- NEW: Edit/Delete tools ---
+  {
+    name: "edit_journal_entry",
+    description: "Edit an existing journal entry by matching its title. Use this when the user wants to update or modify an existing journal entry.",
+    parameters: {
+      type: "object",
+      properties: {
+        entry_title: { type: "string", description: "The current title of the journal entry to edit (fuzzy matched)" },
+        new_title: { type: "string", description: "New title for the entry (optional)" },
+        new_content: { type: "string", description: "New content for the entry (optional)" }
+      },
+      required: ["entry_title"]
+    }
+  },
+  {
+    name: "delete_journal_entry",
+    description: "Delete a journal entry by matching its title. Use this when the user wants to remove a journal entry.",
+    parameters: {
+      type: "object",
+      properties: {
+        entry_title: { type: "string", description: "The title of the journal entry to delete (fuzzy matched)" }
+      },
+      required: ["entry_title"]
+    }
+  },
+  {
+    name: "update_goal",
+    description: "Update an existing goal's title, description, or target days. Use this when the user wants to modify a goal.",
+    parameters: {
+      type: "object",
+      properties: {
+        goal_title: { type: "string", description: "The current title of the goal to update (fuzzy matched)" },
+        new_title: { type: "string", description: "New title for the goal (optional)" },
+        new_description: { type: "string", description: "New description for the goal (optional)" },
+        new_target_days: { type: "number", description: "New target days for the goal (optional)" }
+      },
+      required: ["goal_title"]
+    }
+  },
+  {
+    name: "delete_goal",
+    description: "Delete a goal by matching its title. Use this when the user wants to remove a goal.",
+    parameters: {
+      type: "object",
+      properties: {
+        goal_title: { type: "string", description: "The title of the goal to delete (fuzzy matched)" }
+      },
+      required: ["goal_title"]
+    }
+  },
 ];
 
 const supportToolDeclarations = [
@@ -210,19 +277,19 @@ function getGeminiTools(category: string) {
   let declarations;
   switch (category) {
     case "data": declarations = dataToolDeclarations; break;
-    case "action": declarations = actionToolDeclarations; break;
+    case "action": declarations = [...actionToolDeclarations]; break;
     case "support": declarations = [...supportToolDeclarations]; break;
     default: declarations = [...dataToolDeclarations, ...actionToolDeclarations, ...supportToolDeclarations]; break;
   }
   return [{ functionDeclarations: declarations }];
 }
 
-// Convert to OpenAI-format tools for Groq fallback
+// Convert to OpenAI-format tools for Groq
 function getOpenAITools(category: string) {
   let declarations;
   switch (category) {
     case "data": declarations = dataToolDeclarations; break;
-    case "action": declarations = actionToolDeclarations; break;
+    case "action": declarations = [...actionToolDeclarations]; break;
     case "support": declarations = [...supportToolDeclarations]; break;
     default: declarations = [...dataToolDeclarations, ...actionToolDeclarations, ...supportToolDeclarations]; break;
   }
@@ -237,11 +304,11 @@ function getOpenAITools(category: string) {
 }
 
 // ============================================================
-// INTENT ROUTER - Groq Llama 3 8B
+// INTENT ROUTER - Groq Llama 3.1 8B
 // ============================================================
 
 async function classifyIntent(message: string, crisisDetected: boolean): Promise<string> {
-  if (crisisDetected) return "support"; // Always route crisis to support
+  if (crisisDetected) return "support";
 
   const GROQ_API_KEY = Deno.env.get("GROQ_API_KEY");
   if (!GROQ_API_KEY) {
@@ -257,15 +324,15 @@ async function classifyIntent(message: string, crisisDetected: boolean): Promise
         "Authorization": `Bearer ${GROQ_API_KEY}`,
       },
       body: JSON.stringify({
-        model: "llama3-8b-8192",
+        model: "llama-3.1-8b-instant",
         messages: [
           {
             role: "system",
             content: `Classify the user message into exactly ONE category. Respond with ONLY the category word, nothing else.
 
 Categories:
-- data: User asks about their progress, stats, moods, goals, journals, biometrics, or history
-- action: User wants to create, update, complete, or log something (goals, check-ins, journal entries, coping activities)
+- data: User asks about their progress, stats, moods, goals, journals, biometrics, history, or wants to LIST/VIEW/CHECK existing entries
+- action: User wants to create, update, edit, delete, complete, or log something (goals, check-ins, journal entries, coping activities)
 - support: User is struggling emotionally, needs coping strategies, is in crisis, or needs an action plan
 - chat: General conversation, greetings, motivation, questions about recovery, or anything not fitting above categories`
           },
@@ -329,7 +396,7 @@ async function callCerebrasChat(
         "Authorization": `Bearer ${CEREBRAS_API_KEY}`,
       },
       body: JSON.stringify({
-        model: "llama3.1-70b",
+        model: "llama-3.3-70b",
         messages,
         max_tokens: 300,
         temperature: 0.7,
@@ -351,54 +418,31 @@ async function callCerebrasChat(
 }
 
 // ============================================================
-// GROQ FALLBACK WORKER - Tool calling when Gemini 429s
+// GROQ PRIMARY WORKER - Tool calling (Llama 3.3 70B)
 // ============================================================
 
 async function callGroqWithTools(
   systemPrompt: string,
-  contents: any[],
-  tools: any[]
+  userMessage: string,
+  conversationHistory: any[],
+  tools: any[],
+  toolChoiceMode: "auto" | "required" = "auto"
 ): Promise<{ content: string | null; toolCalls: any[] | null }> {
   const GROQ_API_KEY = Deno.env.get("GROQ_API_KEY");
   if (!GROQ_API_KEY) {
-    console.warn("[GroqFallback] GROQ_API_KEY not set");
+    console.warn("[GroqPrimary] GROQ_API_KEY not set");
     return { content: null, toolCalls: null };
   }
 
   try {
-    // Convert Gemini-style contents to OpenAI messages
-    const messages: any[] = [{ role: "system", content: systemPrompt }];
-    
-    for (const item of contents) {
-      if (item.role === "user") {
-        const text = item.parts?.[0]?.text || item.parts?.[0]?.functionResponse;
-        if (item.parts?.[0]?.functionResponse) {
-          messages.push({
-            role: "tool",
-            tool_call_id: `call_${item.parts[0].functionResponse.name}`,
-            content: JSON.stringify(item.parts[0].functionResponse.response)
-          });
-        } else if (text) {
-          messages.push({ role: "user", content: text });
-        }
-      } else if (item.role === "model") {
-        if (item.parts?.[0]?.functionCall) {
-          messages.push({
-            role: "assistant",
-            tool_calls: [{
-              id: `call_${item.parts[0].functionCall.name}`,
-              type: "function",
-              function: {
-                name: item.parts[0].functionCall.name,
-                arguments: JSON.stringify(item.parts[0].functionCall.args || {})
-              }
-            }]
-          });
-        } else {
-          messages.push({ role: "assistant", content: item.parts?.[0]?.text || "" });
-        }
-      }
-    }
+    const messages: any[] = [
+      { role: "system", content: systemPrompt },
+      ...conversationHistory.slice(-10).map((msg: any) => ({
+        role: msg.role === "user" ? "user" : "assistant",
+        content: typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content)
+      })),
+      { role: "user", content: userMessage }
+    ];
 
     const body: any = {
       model: "llama-3.3-70b-versatile",
@@ -409,7 +453,7 @@ async function callGroqWithTools(
     
     if (tools.length > 0) {
       body.tools = tools;
-      body.tool_choice = "auto";
+      body.tool_choice = toolChoiceMode;
     }
 
     const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
@@ -423,7 +467,7 @@ async function callGroqWithTools(
 
     if (!response.ok) {
       const errText = await response.text().catch(() => "");
-      console.error(`[GroqFallback] Error ${response.status}: ${errText}`);
+      console.error(`[GroqPrimary] Error ${response.status}: ${errText}`);
       return { content: null, toolCalls: null };
     }
 
@@ -435,9 +479,128 @@ async function callGroqWithTools(
       toolCalls: choice?.tool_calls || null
     };
   } catch (error) {
-    console.error("[GroqFallback] Failed:", error);
+    console.error("[GroqPrimary] Failed:", error);
     return { content: null, toolCalls: null };
   }
+}
+
+// Get follow-up response from Groq after tool execution
+async function getGroqFollowUp(
+  systemPrompt: string,
+  userMessage: string,
+  toolCalls: any[],
+  toolResults: any[]
+): Promise<string> {
+  const GROQ_API_KEY = Deno.env.get("GROQ_API_KEY");
+  if (!GROQ_API_KEY) return "";
+
+  try {
+    const followUpMessages: any[] = [
+      { 
+        role: "system", 
+        content: systemPrompt + "\n\nCRITICAL: The tool results below contain REAL user data from the database. Use ONLY this data in your response. Do NOT invent, fabricate, or hallucinate any entries, goals, check-ins, or journal data. If the tool returned empty results, say there are none."
+      },
+      { role: "user", content: userMessage },
+      {
+        role: "assistant",
+        tool_calls: toolCalls.map((tc: any) => ({
+          id: tc.id,
+          type: "function",
+          function: { name: tc.function.name, arguments: tc.function.arguments }
+        }))
+      },
+      ...toolResults.map((tr, i) => ({
+        role: "tool",
+        tool_call_id: toolCalls[i]?.id || `call_${i}`,
+        content: JSON.stringify(tr.result)
+      }))
+    ];
+
+    const resp = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${GROQ_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model: "llama-3.3-70b-versatile",
+        messages: followUpMessages,
+        max_tokens: 500,
+        temperature: 0.7,
+      }),
+    });
+
+    if (resp.ok) {
+      const data = await resp.json();
+      return data.choices?.[0]?.message?.content || "";
+    }
+    return "";
+  } catch (e) {
+    console.error("[GroqPrimary] Follow-up failed:", e);
+    return "";
+  }
+}
+
+// ============================================================
+// GEMINI FALLBACK WORKER - When Groq fails
+// ============================================================
+
+async function callGeminiWithTools(
+  systemPrompt: string,
+  contents: any[],
+  tools: any[],
+  apiKey: string
+): Promise<{ ok: boolean; status: number; data?: any }> {
+  const body: any = {
+    contents,
+    systemInstruction: { parts: [{ text: systemPrompt }] },
+  };
+  if (tools.length > 0) {
+    body.tools = tools;
+    body.toolConfig = { functionCallingConfig: { mode: "AUTO" } };
+  }
+
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${apiKey}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }
+  );
+
+  if (!response.ok) {
+    return { ok: false, status: response.status };
+  }
+
+  const data = await response.json();
+  return { ok: true, status: 200, data };
+}
+
+// ============================================================
+// FUZZY TITLE MATCHING - Shared helper for edit/delete tools
+// ============================================================
+
+function fuzzyMatchTitle(items: any[], targetTitle: string): any | null {
+  if (!items || items.length === 0) return null;
+  
+  const targetWords = targetTitle.toLowerCase().split(/\s+/);
+  let bestMatch = items[0];
+  let bestScore = 0;
+
+  for (const item of items) {
+    const itemTitle = (item.title || "").toLowerCase();
+    // Exact match
+    if (itemTitle === targetTitle.toLowerCase()) return item;
+    
+    const itemWords = itemTitle.split(/\s+/);
+    const overlap = targetWords.filter((w: string) => 
+      itemWords.some((iw: string) => iw.includes(w) || w.includes(iw))
+    ).length;
+    if (overlap > bestScore) { bestScore = overlap; bestMatch = item; }
+  }
+
+  return bestScore > 0 ? bestMatch : items[0];
 }
 
 // ============================================================
@@ -732,22 +895,12 @@ async function executeTool(supabase: any, userId: string, toolName: string, args
     
     case "complete_goal": {
       const { data: goals } = await supabase.from("goals").select("id, title").eq("user_id", userId).eq("completed", false);
-      
       if (!goals || goals.length === 0) return { success: false, message: "No active goals found." };
       
-      const targetWords = args.goal_title.toLowerCase().split(/\s+/);
-      let bestMatch = goals[0];
-      let bestScore = 0;
-      
-      for (const goal of goals) {
-        const goalWords = goal.title.toLowerCase().split(/\s+/);
-        const overlap = targetWords.filter((w: string) => goalWords.some((gw: string) => gw.includes(w) || w.includes(gw))).length;
-        if (overlap > bestScore) { bestScore = overlap; bestMatch = goal; }
-      }
-      
-      const { error } = await supabase.from("goals").update({ completed: true, progress: 100 }).eq("id", bestMatch.id);
+      const match = fuzzyMatchTitle(goals, args.goal_title);
+      const { error } = await supabase.from("goals").update({ completed: true, progress: 100 }).eq("id", match.id);
       if (error) return { success: false, error: error.message };
-      return { success: true, message: `🎉 Goal "${bestMatch.title}" marked as complete! Great job!` };
+      return { success: true, message: `🎉 Goal "${match.title}" marked as complete! Great job!` };
     }
     
     case "log_coping_activity": {
@@ -768,45 +921,90 @@ async function executeTool(supabase: any, userId: string, toolName: string, args
         return { success: true, message: `✅ "${args.activity_name}" has been logged as a coping activity.` };
       }
     }
+
+    // --- NEW: Edit/Delete tools ---
+    case "edit_journal_entry": {
+      const { data: entries } = await supabase
+        .from("journal_entries")
+        .select("id, title, content")
+        .eq("user_id", userId)
+        .order("created_at", { ascending: false })
+        .limit(20);
+      
+      if (!entries || entries.length === 0) return { success: false, message: "No journal entries found to edit." };
+      
+      const match = fuzzyMatchTitle(entries, args.entry_title);
+      const updates: any = {};
+      if (args.new_title) updates.title = args.new_title;
+      if (args.new_content) updates.content = args.new_content;
+      updates.updated_at = new Date().toISOString();
+      
+      const { error } = await supabase.from("journal_entries").update(updates).eq("id", match.id);
+      if (error) return { success: false, error: error.message };
+      return { success: true, message: `✅ Journal entry "${match.title}" has been updated!` };
+    }
+
+    case "delete_journal_entry": {
+      const { data: entries } = await supabase
+        .from("journal_entries")
+        .select("id, title")
+        .eq("user_id", userId)
+        .order("created_at", { ascending: false })
+        .limit(20);
+      
+      if (!entries || entries.length === 0) return { success: false, message: "No journal entries found to delete." };
+      
+      const match = fuzzyMatchTitle(entries, args.entry_title);
+      const { error } = await supabase.from("journal_entries").delete().eq("id", match.id);
+      if (error) return { success: false, error: error.message };
+      return { success: true, message: `🗑️ Journal entry "${match.title}" has been deleted.` };
+    }
+
+    case "update_goal": {
+      const { data: goals } = await supabase
+        .from("goals")
+        .select("id, title, description, target_days")
+        .eq("user_id", userId)
+        .eq("completed", false);
+      
+      if (!goals || goals.length === 0) return { success: false, message: "No active goals found to update." };
+      
+      const match = fuzzyMatchTitle(goals, args.goal_title);
+      const updates: any = {};
+      if (args.new_title) updates.title = args.new_title;
+      if (args.new_description) updates.description = args.new_description;
+      if (args.new_target_days) {
+        updates.target_days = args.new_target_days;
+        updates.end_date = new Date(Date.now() + args.new_target_days * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+      }
+      
+      const { error } = await supabase.from("goals").update(updates).eq("id", match.id);
+      if (error) return { success: false, error: error.message };
+      return { success: true, message: `✅ Goal "${match.title}" has been updated!` };
+    }
+
+    case "delete_goal": {
+      const { data: goals } = await supabase
+        .from("goals")
+        .select("id, title")
+        .eq("user_id", userId);
+      
+      if (!goals || goals.length === 0) return { success: false, message: "No goals found to delete." };
+      
+      const match = fuzzyMatchTitle(goals, args.goal_title);
+      // Delete completions first (FK constraint)
+      await supabase.from("goal_completions").delete().eq("goal_id", match.id);
+      const { error } = await supabase.from("goals").delete().eq("id", match.id);
+      if (error) return { success: false, error: error.message };
+      return { success: true, message: `🗑️ Goal "${match.title}" has been deleted.` };
+    }
     
     default:
       return { error: `Unknown tool: ${toolName}` };
   }
 }
 
-// ============================================================
-// GEMINI WORKER - Primary tool-calling model
-// ============================================================
-
-async function callGeminiWithTools(
-  systemPrompt: string,
-  contents: any[],
-  tools: any[],
-  apiKey: string
-): Promise<{ ok: boolean; status: number; data?: any }> {
-  const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${apiKey}`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contents,
-        systemInstruction: { parts: [{ text: systemPrompt }] },
-        tools,
-        toolConfig: { functionCallingConfig: { mode: "AUTO" } }
-      }),
-    }
-  );
-
-  if (!response.ok) {
-    return { ok: false, status: response.status };
-  }
-
-  const data = await response.json();
-  return { ok: true, status: 200, data };
-}
-
-// Generate contextual response from tool results when model returns empty
+// Generate contextual response from tool results when all models fail
 function generateFallbackFromTools(allToolResults: any[]): string {
   if (allToolResults.length === 0) {
     return "I'm here to support you on your recovery journey. How can I help you today?";
@@ -858,12 +1056,19 @@ serve(async (req) => {
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    const authHeader = req.headers.get("Authorization")!;
+    const authHeader = req.headers.get("Authorization");
+    if (!authHeader) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" }
+      });
+    }
     const token = authHeader.replace("Bearer ", "");
     const { data: { user } } = await supabase.auth.getUser(token);
 
     if (!user) {
-      throw new Error("Unauthorized");
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" }
+      });
     }
 
     const { message, conversationHistory } = await req.json();
@@ -900,21 +1105,25 @@ serve(async (req) => {
 CORE RULES:
 1. Be warm, supportive, and practical. Keep responses under 150 words.
 2. Use tools to get real user data before answering questions about their progress, moods, goals, or journals.
-3. ALWAYS respond with actual data after calling READ tools.
+3. ALWAYS respond with actual data after calling READ tools. NEVER fabricate or invent data.
 4. For WRITE tools (create_goal, create_check_in, create_journal_entry):
    - ALWAYS ask the user for details FIRST before creating anything
    - NEVER create duplicates
    - Only call create_* tools when user explicitly provides NEW content to add
-5. ${crisisCheck.isCrisis ? 'CRISIS DETECTED: Call escalate_crisis immediately and share 988 hotline.' : 'If user mentions suicide or self-harm, call escalate_crisis immediately.'}
+5. For EDIT/DELETE tools (edit_journal_entry, update_goal, delete_journal_entry, delete_goal):
+   - Use these when the user wants to modify or remove existing entries
+   - Confirm the action with the user after completion
+6. ${crisisCheck.isCrisis ? 'CRISIS DETECTED: Call escalate_crisis immediately and share 988 hotline.' : 'If user mentions suicide or self-harm, call escalate_crisis immediately.'}
+7. NEVER output internal tool names, reasoning traces, or raw function names in your response.
 
-IMPORTANT: After calling any tool, provide a helpful text response that describes or confirms the data.`;
+IMPORTANT: After calling any tool, provide a helpful text response that describes or confirms the data. Use ONLY real data from tool results.`;
 
     // ---- STEP 2: Route to appropriate agent ----
 
     // === CHAT PATH: Cerebras (fast, no tools) ===
     if (routerCategory === "chat") {
       console.log("[Agent] Chat path -> Cerebras");
-      modelUsed = "cerebras-llama3.1-70b";
+      modelUsed = "cerebras-llama3.3-70b";
       
       const chatResponse = await callCerebrasChat(
         systemPrompt,
@@ -924,9 +1133,17 @@ IMPORTANT: After calling any tool, provide a helpful text response that describe
 
       let finalContent = chatResponse;
       
-      // Fallback to Gemini if Cerebras fails
+      // Fallback to Groq text-only if Cerebras fails
       if (!finalContent) {
-        console.log("[Agent] Cerebras failed, falling back to Gemini for chat");
+        console.log("[Agent] Cerebras failed, falling back to Groq for chat");
+        modelUsed = "groq-llama3.3-70b";
+        const groqResult = await callGroqWithTools(systemPrompt, sanitizedMessage, conversationHistory || [], []);
+        finalContent = groqResult.content;
+      }
+
+      // Fallback to Gemini if Groq also fails
+      if (!finalContent) {
+        console.log("[Agent] Groq chat failed, falling back to Gemini");
         modelUsed = "gemini-2.5-flash-lite";
         const GOOGLE_API_KEY = Deno.env.get("GOOGLE_API_KEY");
         if (GOOGLE_API_KEY) {
@@ -948,9 +1165,10 @@ IMPORTANT: After calling any tool, provide a helpful text response that describe
         modelUsed = "fallback-static";
       }
 
+      finalContent = sanitizeOutput(finalContent);
+
       const responseTimeMs = Date.now() - startTime;
       
-      // Log observability
       try {
         await supabase.from("ai_observability_logs").insert({
           user_id: user.id,
@@ -989,182 +1207,135 @@ IMPORTANT: After calling any tool, provide a helpful text response that describe
       );
     }
 
-    // === TOOL PATH: data/action/support/all -> Gemini (primary) with Groq fallback ===
-    const GOOGLE_API_KEY = Deno.env.get("GOOGLE_API_KEY");
-    if (!GOOGLE_API_KEY) {
-      throw new Error("GOOGLE_API_KEY not configured");
-    }
-
-    const geminiTools = getGeminiTools(routerCategory);
+    // === TOOL PATH: data/action/support/all -> Groq (primary) with Gemini fallback ===
     const openaiTools = getOpenAITools(routerCategory);
+    
+    // Force tool use for data/action routes to prevent hallucination
+    const toolChoice = (routerCategory === "data" || routerCategory === "action") ? "required" : "auto";
+    
+    console.log(`[Agent] Tool path -> Groq PRIMARY (tool_choice: ${toolChoice})`);
 
-    const sanitizedHistory = (conversationHistory || []).map((msg: any) => ({
-      role: msg.role === "user" ? "user" : "model",
-      parts: [{ text: sanitizeInput(msg.content, 800) }]
-    })).slice(-12);
-
-    const contents = [
-      ...sanitizedHistory,
-      { role: "user", parts: [{ text: sanitizedMessage }] }
-    ];
-
-    // Try Gemini first
-    let geminiResult = await callGeminiWithTools(systemPrompt, contents, geminiTools, GOOGLE_API_KEY);
-    let useGroqFallback = false;
-
-    if (!geminiResult.ok) {
-      if (geminiResult.status === 429) {
-        console.log("[Agent] Gemini 429, switching to Groq fallback");
-        useGroqFallback = true;
-      } else {
-        console.error(`[Agent] Gemini error ${geminiResult.status}`);
-        throw new Error("Failed to get AI response");
-      }
-    }
+    // ---- PRIMARY: Groq with tools ----
+    modelUsed = "groq-llama3.3-70b";
+    const groqResult = await callGroqWithTools(
+      systemPrompt,
+      sanitizedMessage,
+      conversationHistory || [],
+      openaiTools,
+      toolChoice as "auto" | "required"
+    );
 
     let finalContent = "";
     let allToolResults: any[] = [];
     let iterations = 0;
-    const maxIterations = 5;
 
-    if (useGroqFallback) {
-      // ---- GROQ FALLBACK PATH ----
-      modelUsed = "groq-llama3.1-70b";
-      
-      const groqResult = await callGroqWithTools(systemPrompt, contents, openaiTools);
-      
-      if (groqResult.toolCalls && groqResult.toolCalls.length > 0) {
-        // Process tool calls from Groq
-        for (const tc of groqResult.toolCalls) {
-          iterations++;
-          const toolName = tc.function.name;
-          const toolArgs = JSON.parse(tc.function.arguments || "{}");
-          
-          console.log(`[Agent] Groq tool call: ${toolName}`);
-          toolsCalled.push(toolName);
-          autonomyScore++;
-          
-          try {
-            const result = await executeTool(supabase, user.id, toolName, toolArgs);
-            allToolResults.push({ tool: toolName, args: toolArgs, result });
-          } catch (toolError: any) {
-            console.error(`[Agent] Tool ${toolName} failed:`, toolError.message);
-          }
-        }
-        
-        // Get final response from Groq with tool results
-        const followUpMessages: any[] = [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: sanitizedMessage },
-          {
-            role: "assistant",
-            tool_calls: groqResult.toolCalls.map((tc: any) => ({
-              id: tc.id,
-              type: "function",
-              function: { name: tc.function.name, arguments: tc.function.arguments }
-            }))
-          },
-          ...allToolResults.map((tr, i) => ({
-            role: "tool",
-            tool_call_id: groqResult.toolCalls[i]?.id || `call_${i}`,
-            content: JSON.stringify(tr.result)
-          }))
-        ];
-
-        const followUp = await callGroqWithTools(systemPrompt, [], []);
-        // Actually call Groq properly for the follow-up
-        const GROQ_API_KEY = Deno.env.get("GROQ_API_KEY");
-        if (GROQ_API_KEY) {
-          try {
-            const resp = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-                "Authorization": `Bearer ${GROQ_API_KEY}`,
-              },
-              body: JSON.stringify({
-                model: "llama-3.3-70b-versatile",
-                messages: followUpMessages,
-                max_tokens: 500,
-                temperature: 0.7,
-              }),
-            });
-            if (resp.ok) {
-              const data = await resp.json();
-              finalContent = data.choices?.[0]?.message?.content || "";
-            }
-          } catch (e) {
-            console.error("[Agent] Groq follow-up failed:", e);
-          }
-        }
-      } else {
-        finalContent = groqResult.content || "";
-      }
-
-      if (!finalContent) {
-        finalContent = generateFallbackFromTools(allToolResults);
-      }
-
-    } else {
-      // ---- GEMINI PRIMARY PATH ----
-      modelUsed = "gemini-2.5-flash-lite";
-      let candidate = geminiResult.data?.candidates?.[0];
-      
-      while (candidate?.content?.parts?.[0]?.functionCall && iterations < maxIterations) {
+    if (groqResult.toolCalls && groqResult.toolCalls.length > 0) {
+      // Process tool calls from Groq
+      for (const tc of groqResult.toolCalls) {
         iterations++;
-        const functionCall = candidate.content.parts[0].functionCall;
-        const toolName = functionCall.name;
-        const toolArgs = functionCall.args || {};
+        const toolName = tc.function.name;
+        let toolArgs = {};
+        try { toolArgs = JSON.parse(tc.function.arguments || "{}"); } catch {}
         
-        console.log(`[Agent] Gemini tool iteration ${iterations}: ${toolName}`);
+        console.log(`[Agent] Groq tool call: ${toolName}`);
         toolsCalled.push(toolName);
         autonomyScore++;
         
         try {
           const result = await executeTool(supabase, user.id, toolName, toolArgs);
           allToolResults.push({ tool: toolName, args: toolArgs, result });
-          
-          contents.push({
-            role: "model",
-            parts: [{ functionCall: { name: toolName, args: toolArgs } }]
-          });
-          contents.push({
-            role: "user",
-            parts: [{ functionResponse: { name: toolName, response: result } }]
-          });
-          
-          // Continue conversation
-          const nextResult = await callGeminiWithTools(systemPrompt, contents, geminiTools, GOOGLE_API_KEY);
-          
-          if (!nextResult.ok) {
-            if (nextResult.status === 429) {
-              console.log("[Agent] Gemini 429 mid-loop, finishing with tool results");
-              modelUsed = "gemini+fallback";
-            }
-            break;
-          }
-          
-          candidate = nextResult.data?.candidates?.[0];
         } catch (toolError: any) {
           console.error(`[Agent] Tool ${toolName} failed:`, toolError.message);
-          contents.push({
-            role: "model",
-            parts: [{ functionCall: { name: toolName, args: toolArgs } }]
-          });
-          contents.push({
-            role: "user",
-            parts: [{ functionResponse: { name: toolName, response: { error: toolError.message } } }]
-          });
-          break;
+          allToolResults.push({ tool: toolName, args: toolArgs, result: { error: toolError.message } });
         }
       }
       
-      finalContent = candidate?.content?.parts?.[0]?.text || "";
+      // Get follow-up from Groq with tool results
+      finalContent = await getGroqFollowUp(systemPrompt, sanitizedMessage, groqResult.toolCalls, allToolResults);
       
-      if (!finalContent || finalContent.trim() === "") {
-        finalContent = generateFallbackFromTools(allToolResults);
-        console.log(`[Agent] Used fallback response generation`);
+    } else if (groqResult.content) {
+      finalContent = groqResult.content;
+    }
+
+    // ---- FALLBACK: Gemini if Groq produced nothing useful ----
+    if (!finalContent || finalContent.trim() === "") {
+      console.log("[Agent] Groq produced no content, falling back to Gemini");
+      modelUsed = "gemini-2.5-flash-lite";
+      
+      const GOOGLE_API_KEY = Deno.env.get("GOOGLE_API_KEY");
+      if (GOOGLE_API_KEY) {
+        const geminiTools = getGeminiTools(routerCategory);
+        const sanitizedHistory = (conversationHistory || []).map((msg: any) => ({
+          role: msg.role === "user" ? "user" : "model",
+          parts: [{ text: sanitizeInput(msg.content, 800) }]
+        })).slice(-12);
+
+        const contents = [
+          ...sanitizedHistory,
+          { role: "user", parts: [{ text: sanitizedMessage }] }
+        ];
+
+        const geminiResult = await callGeminiWithTools(systemPrompt, contents, geminiTools, GOOGLE_API_KEY);
+
+        if (geminiResult.ok) {
+          let candidate = geminiResult.data?.candidates?.[0];
+          const maxIter = 5;
+          
+          while (candidate?.content?.parts?.[0]?.functionCall && iterations < maxIter) {
+            iterations++;
+            const functionCall = candidate.content.parts[0].functionCall;
+            const toolName = functionCall.name;
+            const toolArgs = functionCall.args || {};
+            
+            console.log(`[Agent] Gemini fallback tool iteration ${iterations}: ${toolName}`);
+            toolsCalled.push(toolName);
+            autonomyScore++;
+            
+            try {
+              const result = await executeTool(supabase, user.id, toolName, toolArgs);
+              allToolResults.push({ tool: toolName, args: toolArgs, result });
+              
+              contents.push({
+                role: "model",
+                parts: [{ functionCall: { name: toolName, args: toolArgs } }]
+              });
+              contents.push({
+                role: "user",
+                parts: [{ functionResponse: { name: toolName, response: result } }]
+              });
+              
+              const nextResult = await callGeminiWithTools(systemPrompt, contents, geminiTools, GOOGLE_API_KEY);
+              
+              if (!nextResult.ok) {
+                console.log(`[Agent] Gemini ${nextResult.status} mid-loop`);
+                modelUsed = "gemini+fallback";
+                break;
+              }
+              
+              candidate = nextResult.data?.candidates?.[0];
+            } catch (toolError: any) {
+              console.error(`[Agent] Tool ${toolName} failed:`, toolError.message);
+              break;
+            }
+          }
+          
+          finalContent = candidate?.content?.parts?.[0]?.text || "";
+        }
       }
+    }
+
+    // ---- LAST RESORT: Static fallback from tool results ----
+    if (!finalContent || finalContent.trim() === "") {
+      finalContent = generateFallbackFromTools(allToolResults);
+      modelUsed = allToolResults.length > 0 ? `${modelUsed}+fallback` : "fallback-static";
+      console.log(`[Agent] Used static fallback response`);
+    }
+
+    // Sanitize output
+    finalContent = sanitizeOutput(finalContent);
+
+    if (!finalContent) {
+      finalContent = generateFallbackFromTools(allToolResults);
     }
 
     const responseTimeMs = Date.now() - startTime;
@@ -1173,7 +1344,7 @@ IMPORTANT: After calling any tool, provide a helpful text response that describe
       ["get_user_progress", "get_recent_moods", "get_active_goals", "get_recent_journal_entries", "get_biometric_data", "get_conversation_context"].includes(t)
     ).length;
     const writeToolsUsed = toolsCalled.filter(t => 
-      ["create_goal", "create_check_in", "create_journal_entry", "complete_goal", "log_coping_activity"].includes(t)
+      ["create_goal", "create_check_in", "create_journal_entry", "complete_goal", "log_coping_activity", "edit_journal_entry", "delete_journal_entry", "update_goal", "delete_goal"].includes(t)
     ).length;
     
     // Log observability
