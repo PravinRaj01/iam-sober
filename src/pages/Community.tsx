@@ -63,7 +63,6 @@ const Community = () => {
         `)
         .eq("type", "milestone");
 
-      // Apply filters based on active tab
       if (activeTab === "my-posts" && user) {
         query = query.eq("user_id", user.id);
       } else if (activeTab === "week") {
@@ -72,9 +71,7 @@ const Community = () => {
         query = query.gte("created_at", weekAgo.toISOString());
       }
 
-      // Apply sorting
       if (activeTab === "most-supported") {
-        // We'll sort by love + comment count client-side
         query = query.order("created_at", { ascending: false }).limit(50);
       } else {
         query = query.order("created_at", { ascending: false }).limit(20);
@@ -83,12 +80,10 @@ const Community = () => {
       const { data, error } = await query;
       if (error) throw error;
 
-      // If most-supported tab, fetch love and/or comment counts and sort
       if (activeTab === "most-supported" && data) {
         const interactionIds = data.map(d => d.id);
         
         if (popularFilter === "likes") {
-          // Sort by most liked only
           const lovesResult = await supabase
             .from("community_reactions")
             .select("interaction_id")
@@ -107,7 +102,6 @@ const Community = () => {
             })
             .slice(0, 20);
         } else {
-          // Sort by most commented only
           const commentsResult = await supabase
             .from("community_comments")
             .select("interaction_id")
@@ -132,7 +126,6 @@ const Community = () => {
     },
   });
 
-  // Set up real-time subscription for all changes + presence tracking
   useEffect(() => {
     let channel: ReturnType<typeof supabase.channel> | null = null;
 
@@ -141,51 +134,14 @@ const Community = () => {
       
       channel = supabase
         .channel("community-realtime")
-        .on(
-          "postgres_changes",
-          {
-            event: "INSERT",
-            schema: "public",
-            table: "community_interactions",
-          },
-          () => {
-            refetch();
-          }
-        )
-        .on(
-          "postgres_changes",
-          {
-            event: "DELETE",
-            schema: "public",
-            table: "community_interactions",
-          },
-          () => {
-            refetch();
-          }
-        )
-        .on(
-          "postgres_changes",
-          {
-            event: "UPDATE",
-            schema: "public",
-            table: "community_interactions",
-          },
-          () => {
-            refetch();
-          }
-        )
-        .on("presence", { event: "sync" }, () => {
-          // Presence state changed
-        })
-        .on("presence", { event: "join" }, () => {
-          // New user joined
-        })
-        .on("presence", { event: "leave" }, () => {
-          // User left
-        })
+        .on("postgres_changes", { event: "INSERT", schema: "public", table: "community_interactions" }, () => { refetch(); })
+        .on("postgres_changes", { event: "DELETE", schema: "public", table: "community_interactions" }, () => { refetch(); })
+        .on("postgres_changes", { event: "UPDATE", schema: "public", table: "community_interactions" }, () => { refetch(); })
+        .on("presence", { event: "sync" }, () => {})
+        .on("presence", { event: "join" }, () => {})
+        .on("presence", { event: "leave" }, () => {})
         .subscribe(async (status) => {
           if (status === "SUBSCRIBED" && user) {
-            // Track this user's presence
             await channel?.track({
               user_id: user.id,
               online_at: new Date().toISOString(),
@@ -243,19 +199,19 @@ const Community = () => {
           <TabsList className="grid w-full grid-cols-4 bg-card/50 h-auto">
             <TabsTrigger value="latest" className="gap-1 py-2 px-2 text-xs sm:text-sm">
               <Clock className="h-3 w-3 sm:h-4 sm:w-4" />
-              <span className="hidden xs:inline">Latest</span>
+              <span className="hidden xs:inline">{t("community.latest")}</span>
             </TabsTrigger>
             <TabsTrigger value="most-supported" className="gap-1 py-2 px-2 text-xs sm:text-sm">
               <TrendingUp className="h-3 w-3 sm:h-4 sm:w-4" />
-              <span className="hidden xs:inline">Popular</span>
+              <span className="hidden xs:inline">{t("community.popular")}</span>
             </TabsTrigger>
             <TabsTrigger value="week" className="gap-1 py-2 px-2 text-xs sm:text-sm">
               <RefreshCw className="h-3 w-3 sm:h-4 sm:w-4" />
-              <span className="hidden xs:inline">Week</span>
+              <span className="hidden xs:inline">{t("community.week")}</span>
             </TabsTrigger>
             <TabsTrigger value="my-posts" className="gap-1 py-2 px-2 text-xs sm:text-sm">
               <User className="h-3 w-3 sm:h-4 sm:w-4" />
-              <span className="hidden xs:inline">Mine</span>
+              <span className="hidden xs:inline">{t("community.mine")}</span>
             </TabsTrigger>
           </TabsList>
 
@@ -264,16 +220,16 @@ const Community = () => {
               <Card className="text-center py-16 bg-card/50 backdrop-blur-lg">
                 <div className="max-w-md mx-auto">
                   <User className="h-16 w-16 mx-auto mb-4 text-muted-foreground" />
-                  <h3 className="text-xl font-semibold mb-2">No milestones yet</h3>
+                  <h3 className="text-xl font-semibold mb-2">{t("community.noMilestones")}</h3>
                   <p className="text-muted-foreground mb-6">
-                    Be the first to share your progress with the community!
+                    {t("community.beFirst")}
                   </p>
                   <Button
                     onClick={() => setShareDialogOpen(true)}
                     className="bg-gradient-primary"
                   >
                     <Plus className="h-4 w-4 mr-2" />
-                    Share Your Milestone
+                    {t("community.shareMilestone")}
                   </Button>
                 </div>
               </Card>
@@ -301,14 +257,14 @@ const Community = () => {
                   size="sm"
                   onClick={() => setPopularFilter("likes")}
                 >
-                  Most Liked
+                  {t("community.mostLiked")}
                 </Button>
                 <Button
                   variant={popularFilter === "comments" ? "default" : "outline"}
                   size="sm"
                   onClick={() => setPopularFilter("comments")}
                 >
-                  Most Commented
+                  {t("community.mostCommented")}
                 </Button>
               </div>
             </div>
@@ -316,9 +272,9 @@ const Community = () => {
               <Card className="text-center py-16 bg-card/50 backdrop-blur-lg">
                 <div className="max-w-md mx-auto">
                   <TrendingUp className="h-16 w-16 mx-auto mb-4 text-muted-foreground" />
-                  <h3 className="text-xl font-semibold mb-2">No popular posts yet</h3>
+                  <h3 className="text-xl font-semibold mb-2">{t("community.noPopular")}</h3>
                   <p className="text-muted-foreground mb-6">
-                    Start supporting community members to see popular posts!
+                    {t("community.startSupporting")}
                   </p>
                 </div>
               </Card>
@@ -343,16 +299,16 @@ const Community = () => {
               <Card className="text-center py-16 bg-card/50 backdrop-blur-lg">
                 <div className="max-w-md mx-auto">
                   <RefreshCw className="h-16 w-16 mx-auto mb-4 text-muted-foreground" />
-                  <h3 className="text-xl font-semibold mb-2">No milestones this week</h3>
+                  <h3 className="text-xl font-semibold mb-2">{t("community.noMilestonesWeek")}</h3>
                   <p className="text-muted-foreground mb-6">
-                    Be the first to share a milestone this week!
+                    {t("community.beFirstWeek")}
                   </p>
                   <Button
                     onClick={() => setShareDialogOpen(true)}
                     className="bg-gradient-primary"
                   >
                     <Plus className="h-4 w-4 mr-2" />
-                    Share Your Milestone
+                    {t("community.shareMilestone")}
                   </Button>
                 </div>
               </Card>
@@ -377,16 +333,16 @@ const Community = () => {
               <Card className="text-center py-16 bg-card/50 backdrop-blur-lg">
                 <div className="max-w-md mx-auto">
                   <User className="h-16 w-16 mx-auto mb-4 text-muted-foreground" />
-                  <h3 className="text-xl font-semibold mb-2">You haven't shared any milestones</h3>
+                  <h3 className="text-xl font-semibold mb-2">{t("community.noShared")}</h3>
                   <p className="text-muted-foreground mb-6">
-                    Share your progress and inspire the community!
+                    {t("community.shareProgress")}
                   </p>
                   <Button
                     onClick={() => setShareDialogOpen(true)}
                     className="bg-gradient-primary"
                   >
                     <Plus className="h-4 w-4 mr-2" />
-                    Share Your First Milestone
+                    {t("community.shareFirst")}
                   </Button>
                 </div>
               </Card>

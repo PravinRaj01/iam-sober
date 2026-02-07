@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft } from "lucide-react";
+import { useLanguage } from "@/contexts/LanguageContext";
 
 interface PageHeaderProps {
   title: string;
@@ -18,6 +19,7 @@ interface PageHeaderProps {
  */
 export function PageHeader({ title, subtitle, actions, showBackButton = true }: PageHeaderProps) {
   const navigate = useNavigate();
+  const { t } = useLanguage();
 
   return (
     <header className="bg-card/80 backdrop-blur-xl border-b border-border/50 sticky top-0 z-30">
@@ -35,7 +37,7 @@ export function PageHeader({ title, subtitle, actions, showBackButton = true }: 
                 className="hidden md:inline-flex items-center gap-2 shrink-0"
               >
                 <ArrowLeft className="h-4 w-4" />
-                <span>Back</span>
+                <span>{t("common.back")}</span>
               </Button>
             )}
             

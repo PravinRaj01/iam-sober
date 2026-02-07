@@ -31,7 +31,7 @@ import {
 } from "@/components/ui/alert-dialog";
 
 const KONAMI_CODE = ['ArrowUp', 'ArrowUp', 'ArrowDown', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'ArrowLeft', 'ArrowRight', 'b', 'a'];
-const TAP_THRESHOLD = 10; // Number of taps needed on mobile/tablet
+const TAP_THRESHOLD = 10;
 const Settings = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -93,15 +93,12 @@ const Settings = () => {
   // Check if dev tools are unlocked
   const isDevUnlocked = localStorage.getItem('devToolsUnlocked') === 'true';
 
-  // Konami code listener - desktop only (keyboard required)
+  // Konami code listener
   const handleKeyDown = useCallback((event: KeyboardEvent) => {
-    // Only process keyboard Konami code on desktop (non-touch primary devices)
     const key = event.key;
     
     setKonamiProgress(prev => {
       const newProgress = [...prev, key].slice(-10);
-      
-      // Check if the sequence matches so far
       const isOnTrack = newProgress.every((k, i) => k === KONAMI_CODE[i]);
       
       if (!isOnTrack) {
@@ -109,13 +106,11 @@ const Settings = () => {
         return [];
       }
       
-      // Update visual indicator
       setKonamiIndicator(newProgress.length);
       
       if (newProgress.length === KONAMI_CODE.length) {
-        // Konami code complete!
         localStorage.setItem('devToolsUnlocked', 'true');
-        window.dispatchEvent(new Event('storage')); // Notify sidebar
+        window.dispatchEvent(new Event('storage'));
         toast({
           title: "🎮 Developer Mode Unlocked!",
           description: "You found the secret! AI Insights is now accessible.",
@@ -161,7 +156,6 @@ const Settings = () => {
           setShareCheckIns(privacy.share_check_ins || false);
           setShareMilestones(privacy.share_milestones || false);
         }
-        // Load notification preferences
         const notifPrefs = (data as any).notification_preferences as any;
         if (notifPrefs) {
           setDailyReminder(notifPrefs.daily_reminder ?? true);
@@ -179,12 +173,10 @@ const Settings = () => {
     retry: false,
   });
 
-  // Handle auth errors by redirecting
   if (error && error.message.includes("auth")) {
     navigate("/auth");
     return null;
   }
-
 
   const handleUpdateProfile = async () => {
     setLoading(true);
@@ -208,13 +200,13 @@ const Settings = () => {
       if (error) throw error;
 
       toast({
-        title: "Settings updated!",
-        description: "Your preferences have been saved.",
+        title: t("common.success"),
+        description: t("settings.saveProfile"),
       });
       refetch();
     } catch (error: any) {
       toast({
-        title: "Error",
+        title: t("common.error"),
         description: error.message,
         variant: "destructive",
       });
@@ -247,13 +239,13 @@ const Settings = () => {
       if (error) throw error;
 
       toast({
-        title: "Notification preferences saved!",
-        description: "Your notification settings have been updated.",
+        title: t("common.success"),
+        description: t("settings.saveNotifications"),
       });
       refetch();
     } catch (error: any) {
       toast({
-        title: "Error",
+        title: t("common.error"),
         description: error.message,
         variant: "destructive",
       });
@@ -261,8 +253,6 @@ const Settings = () => {
       setNotificationLoading(false);
     }
   };
-
-
 
   const handleSignOut = async () => {
     await supabase.auth.signOut();
@@ -277,7 +267,6 @@ const Settings = () => {
       });
 
       if (error) {
-        // Try to surface the edge function's JSON error message
         let message = error.message;
         try {
           const ctx = (error as any).context as Response | undefined;
@@ -291,22 +280,19 @@ const Settings = () => {
         throw new Error(message);
       }
 
-      // Invalidate all queries
       queryClient.invalidateQueries();
 
       toast({
-        title: "Account Reset",
-        description: "Your account has been reset. Starting fresh!",
+        title: t("settings.resetAccount"),
+        description: t("common.success"),
       });
 
-      // Send user straight into onboarding (no need to wait for another navigation)
       navigate("/onboarding", { replace: true });
-
       refetch();
       return data;
     } catch (error: any) {
       toast({
-        title: "Error",
+        title: t("common.error"),
         description: error.message,
         variant: "destructive",
       });
@@ -321,14 +307,12 @@ const Settings = () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("Not authenticated");
 
-      // Delete all user data first (child tables with foreign keys)
       await Promise.all([
         supabase.from("community_comments").delete().eq("user_id", user.id),
         supabase.from("community_reactions").delete().eq("user_id", user.id),
         supabase.from("goal_completions").delete().eq("user_id", user.id),
       ]);
 
-      // Then delete parent tables
       await Promise.all([
         supabase.from("check_ins").delete().eq("user_id", user.id),
         supabase.from("journal_entries").delete().eq("user_id", user.id),
@@ -351,18 +335,17 @@ const Settings = () => {
         supabase.from("profiles").delete().eq("id", user.id),
       ]);
 
-      // Sign out and redirect
       await supabase.auth.signOut();
       
       toast({
-        title: "Account Deleted",
-        description: "Your account and all data have been permanently deleted.",
+        title: t("settings.deleteAccount"),
+        description: t("common.success"),
       });
       
       navigate("/auth");
     } catch (error: any) {
       toast({
-        title: "Error",
+        title: t("common.error"),
         description: error.message,
         variant: "destructive",
       });
@@ -379,11 +362,9 @@ const Settings = () => {
     }
   };
 
-  // Handle tap easter egg for mobile/tablet
   const handleEasterEggTap = useCallback(() => {
     const now = Date.now();
     
-    // Reset if more than 2 seconds between taps
     if (now - lastTapTime > 2000) {
       setTapCount(1);
     } else {
@@ -391,7 +372,6 @@ const Settings = () => {
       setTapCount(newCount);
       
       if (newCount >= TAP_THRESHOLD) {
-        // Easter egg complete!
         localStorage.setItem('devToolsUnlocked', 'true');
         window.dispatchEvent(new Event('storage'));
         toast({
@@ -444,48 +424,48 @@ const Settings = () => {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <User className="h-5 w-5" />
-              Profile
+              {t("settings.profile")}
             </CardTitle>
-            <CardDescription>Manage your personal information</CardDescription>
+            <CardDescription>{t("settings.profileDesc")}</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="pseudonym">Display Name / Pseudonym</Label>
+              <Label htmlFor="pseudonym">{t("settings.displayName")}</Label>
               <Input
                 id="pseudonym"
-                placeholder="How you want to be called"
+                placeholder={t("settings.displayNamePlaceholder")}
                 value={pseudonym}
                 onChange={(e) => setPseudonym(e.target.value)}
               />
               <p className="text-xs text-muted-foreground">
-                This name will be visible to supporters you invite
+                {t("settings.displayNameHint")}
               </p>
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="addiction">Primary Recovery Focus</Label>
+              <Label htmlFor="addiction">{t("settings.recoveryFocus")}</Label>
               <Select value={addictionType} onValueChange={setAddictionType}>
                 <SelectTrigger>
-                  <SelectValue placeholder="Select your focus area" />
+                  <SelectValue placeholder={t("settings.recoveryFocusPlaceholder")} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="alcohol">Alcohol</SelectItem>
-                  <SelectItem value="drugs">Drugs</SelectItem>
-                  <SelectItem value="smoking">Smoking</SelectItem>
-                  <SelectItem value="pornography">Pornography</SelectItem>
-                  <SelectItem value="gambling">Gambling</SelectItem>
-                  <SelectItem value="gaming">Gaming</SelectItem>
-                  <SelectItem value="food">Food</SelectItem>
-                  <SelectItem value="other">Other</SelectItem>
+                  <SelectItem value="alcohol">{t("onboarding.addiction.alcohol")}</SelectItem>
+                  <SelectItem value="drugs">{t("onboarding.addiction.drugs")}</SelectItem>
+                  <SelectItem value="smoking">{t("onboarding.addiction.smoking")}</SelectItem>
+                  <SelectItem value="pornography">{t("onboarding.addiction.pornography")}</SelectItem>
+                  <SelectItem value="gambling">{t("onboarding.addiction.gambling")}</SelectItem>
+                  <SelectItem value="gaming">{t("onboarding.addiction.gaming")}</SelectItem>
+                  <SelectItem value="food">{t("onboarding.addiction.food")}</SelectItem>
+                  <SelectItem value="other">{t("onboarding.addiction.other")}</SelectItem>
                 </SelectContent>
               </Select>
               <p className="text-xs text-muted-foreground">
-                This helps personalize motivational content
+                {t("settings.recoveryFocusHint")}
               </p>
             </div>
 
             <Button onClick={handleUpdateProfile} disabled={loading}>
-              Save Profile
+              {t("settings.saveProfile")}
             </Button>
           </CardContent>
         </Card>
@@ -495,24 +475,24 @@ const Settings = () => {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Bell className="h-5 w-5" />
-              Notifications
+              {t("settings.notifications")}
             </CardTitle>
-            <CardDescription>Configure your notification preferences</CardDescription>
+            <CardDescription>{t("settings.notificationsDesc")}</CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
             {/* Daily Check-in Reminder */}
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <div className="space-y-0.5">
-                  <Label>Daily Check-in Reminder</Label>
-                  <p className="text-sm text-muted-foreground">Get reminded to log your daily check-in</p>
+                  <Label>{t("settings.dailyReminder")}</Label>
+                  <p className="text-sm text-muted-foreground">{t("settings.dailyReminderDesc")}</p>
                 </div>
                 <Switch checked={dailyReminder} onCheckedChange={setDailyReminder} />
               </div>
               {dailyReminder && (
                 <div className="ml-4 pl-4 border-l-2 border-border space-y-3">
                   <div>
-                    <Label className="text-sm">Reminder Time</Label>
+                    <Label className="text-sm">{t("settings.reminderTime")}</Label>
                     <Select value={dailyReminderTime} onValueChange={setDailyReminderTime}>
                       <SelectTrigger className="w-32 mt-1">
                         <SelectValue />
@@ -531,7 +511,7 @@ const Settings = () => {
                     </Select>
                   </div>
                   <div>
-                    <Label className="text-sm">Your Timezone</Label>
+                    <Label className="text-sm">{t("settings.timezone")}</Label>
                     <Select value={timezone} onValueChange={setTimezone}>
                       <SelectTrigger className="w-full mt-1">
                         <SelectValue placeholder="Select timezone" />
@@ -545,7 +525,7 @@ const Settings = () => {
                       </SelectContent>
                     </Select>
                     <p className="text-xs text-muted-foreground mt-1">
-                      Auto-detected: {Intl.DateTimeFormat().resolvedOptions().timeZone}
+                      {t("settings.timezoneAuto")} {Intl.DateTimeFormat().resolvedOptions().timeZone}
                     </p>
                   </div>
                 </div>
@@ -558,14 +538,14 @@ const Settings = () => {
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <div className="space-y-0.5">
-                  <Label>Weekly Progress Report</Label>
-                  <p className="text-sm text-muted-foreground">Receive a summary of your week</p>
+                  <Label>{t("settings.weeklyReport")}</Label>
+                  <p className="text-sm text-muted-foreground">{t("settings.weeklyReportDesc")}</p>
                 </div>
                 <Switch checked={weeklyReport} onCheckedChange={setWeeklyReport} />
               </div>
               {weeklyReport && (
                 <div className="ml-4 pl-4 border-l-2 border-border">
-                  <Label className="text-sm">Report Day</Label>
+                  <Label className="text-sm">{t("settings.reportDay")}</Label>
                   <Select value={weeklyReportDay} onValueChange={setWeeklyReportDay}>
                     <SelectTrigger className="w-32 mt-1">
                       <SelectValue />
@@ -588,8 +568,8 @@ const Settings = () => {
 
             <div className="flex items-center justify-between">
               <div className="space-y-0.5">
-                <Label>Milestone Alerts</Label>
-                <p className="text-sm text-muted-foreground">Celebrate when you reach milestones</p>
+                <Label>{t("settings.milestoneAlerts")}</Label>
+                <p className="text-sm text-muted-foreground">{t("settings.milestoneAlertsDesc")}</p>
               </div>
               <Switch checked={milestoneAlerts} onCheckedChange={setMilestoneAlerts} />
             </div>
@@ -598,8 +578,8 @@ const Settings = () => {
 
             <div className="flex items-center justify-between">
               <div className="space-y-0.5">
-                <Label>Supporter Updates</Label>
-                <p className="text-sm text-muted-foreground">Notify when supporters send messages</p>
+                <Label>{t("settings.supporterUpdates")}</Label>
+                <p className="text-sm text-muted-foreground">{t("settings.supporterUpdatesDesc")}</p>
               </div>
               <Switch checked={supporterUpdates} onCheckedChange={setSupporterUpdates} />
             </div>
@@ -611,13 +591,13 @@ const Settings = () => {
               <div className="flex items-center justify-between">
                 <div className="space-y-0.5">
                   <Label className="flex items-center gap-2">
-                    Push Notifications
+                    {t("settings.pushNotifications")}
                     {isSubscribed && <CheckCircle2 className="h-4 w-4 text-primary" />}
                   </Label>
                   <p className="text-sm text-muted-foreground">
                     {isSupported 
-                      ? "Enable to receive all the above notifications" 
-                      : "Not supported in this browser"}
+                      ? t("settings.pushEnabled")
+                      : t("settings.pushNotSupported")}
                   </p>
                 </div>
                 <Switch 
@@ -637,12 +617,12 @@ const Settings = () => {
                   {pushLoading ? (
                     <>
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Enabling...
+                      {t("common.loading")}
                     </>
                   ) : (
                     <>
                       <Bell className="mr-2 h-4 w-4" />
-                      Enable Push Notifications
+                      {t("settings.enablePush")}
                     </>
                   )}
                 </Button>
@@ -652,7 +632,7 @@ const Settings = () => {
                 <div className="flex items-center gap-2 p-3 rounded-lg bg-primary/10 border border-primary/20">
                   <CheckCircle2 className="h-4 w-4 text-primary shrink-0" />
                   <p className="text-sm text-primary">
-                    Push notifications are enabled. You'll receive the notifications you've enabled above.
+                    {t("settings.pushEnabledMsg")}
                   </p>
                 </div>
               )}
@@ -666,10 +646,10 @@ const Settings = () => {
               {notificationLoading ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Saving...
+                  {t("common.loading")}
                 </>
               ) : (
-                "Save Notification Preferences"
+                t("settings.saveNotifications")
               )}
             </Button>
           </CardContent>
@@ -681,15 +661,15 @@ const Settings = () => {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Shield className="h-5 w-5" />
-              Privacy
+              {t("settings.privacy")}
             </CardTitle>
-            <CardDescription>Control what supporters can see</CardDescription>
+            <CardDescription>{t("settings.privacyDesc")}</CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
             <div className="flex items-center justify-between">
               <div className="space-y-0.5">
-                <Label>Share Journal Entries</Label>
-                <p className="text-sm text-muted-foreground">Allow supporters to read your journal</p>
+                <Label>{t("settings.shareJournal")}</Label>
+                <p className="text-sm text-muted-foreground">{t("settings.shareJournalDesc")}</p>
               </div>
               <Switch checked={shareJournal} onCheckedChange={setShareJournal} />
             </div>
@@ -698,8 +678,8 @@ const Settings = () => {
 
             <div className="flex items-center justify-between">
               <div className="space-y-0.5">
-                <Label>Share Check-ins</Label>
-                <p className="text-sm text-muted-foreground">Let supporters see your mood logs</p>
+                <Label>{t("settings.shareCheckIns")}</Label>
+                <p className="text-sm text-muted-foreground">{t("settings.shareCheckInsDesc")}</p>
               </div>
               <Switch checked={shareCheckIns} onCheckedChange={setShareCheckIns} />
             </div>
@@ -708,14 +688,14 @@ const Settings = () => {
 
             <div className="flex items-center justify-between">
               <div className="space-y-0.5">
-                <Label>Share Milestones</Label>
-                <p className="text-sm text-muted-foreground">Show milestone achievements</p>
+                <Label>{t("settings.shareMilestones")}</Label>
+                <p className="text-sm text-muted-foreground">{t("settings.shareMilestonesDesc")}</p>
               </div>
               <Switch checked={shareMilestones} onCheckedChange={setShareMilestones} />
             </div>
 
             <Button onClick={handleUpdateProfile} disabled={loading}>
-              Save Privacy Settings
+              {t("settings.savePrivacy")}
             </Button>
           </CardContent>
         </Card>
@@ -728,10 +708,10 @@ const Settings = () => {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Sparkles className="h-5 w-5 text-primary" />
-              AI Features
+              {t("settings.aiFeatures")}
             </CardTitle>
             <CardDescription>
-              Agentic AI recovery companion
+              {t("settings.aiFeaturesDesc")}
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -752,7 +732,7 @@ const Settings = () => {
               </AlertDescription>
             </Alert>
             
-            {/* Hidden hint for developers - tap works on all devices */}
+            {/* Hidden hint for developers */}
             <div 
               className="flex flex-col gap-2 mt-4 p-3 rounded-lg border border-dashed border-muted-foreground/20 bg-muted/30 cursor-pointer select-none"
               onClick={handleEasterEggTap}
@@ -760,13 +740,10 @@ const Settings = () => {
               <div className="flex items-center gap-2 text-xs text-muted-foreground">
                 <Gamepad2 className="h-4 w-4" />
                 <span className="font-medium">Easter Egg:</span>
-                {/* Desktop: show Konami hint, but tapping also works */}
                 <span className="hidden lg:inline">Try the Konami code or tap 10 times...</span>
-                {/* Tablet & Mobile: tap only */}
                 <span className="lg:hidden">Tap 10 times for luck...</span>
               </div>
               
-              {/* Tap progress indicator - shows on all devices after 3 taps */}
               {tapCount >= 3 && (
                 <div className="flex items-center gap-3 animate-fade-in">
                   <div className="flex items-center gap-1.5 p-2 rounded-full bg-primary/10 border border-primary/30">
@@ -790,7 +767,6 @@ const Settings = () => {
                 </div>
               )}
               
-              {/* Konami progress indicator - desktop only, shows after 3 correct steps */}
               {konamiIndicator >= 3 && (
                 <div className="hidden lg:flex items-center gap-3 animate-fade-in">
                   <div className="flex items-center gap-1.5 p-2 rounded-full bg-primary/10 border border-primary/30">
@@ -815,7 +791,6 @@ const Settings = () => {
               )}
             </div>
             
-            {/* Show dev tools controls if unlocked */}
             {isDevUnlocked && (
               <div className="space-y-3 pt-2 border-t border-border/50">
                 <div className="flex items-center justify-between">
@@ -850,7 +825,7 @@ const Settings = () => {
                       </AlertDialogDescription>
                     </AlertDialogHeader>
                     <AlertDialogFooter className="flex-col sm:flex-row gap-2">
-                      <AlertDialogCancel className="w-full sm:w-auto">Cancel</AlertDialogCancel>
+                      <AlertDialogCancel className="w-full sm:w-auto">{t("common.cancel")}</AlertDialogCancel>
                       <AlertDialogAction 
                         onClick={() => {
                           localStorage.removeItem('devToolsUnlocked');
@@ -875,8 +850,8 @@ const Settings = () => {
         {/* Account Actions */}
         <Card className="bg-card/50 backdrop-blur-lg border-border/50">
           <CardHeader>
-            <CardTitle>Account</CardTitle>
-            <CardDescription>Manage your account</CardDescription>
+            <CardTitle>{t("settings.account")}</CardTitle>
+            <CardDescription>{t("settings.accountDesc")}</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             {/* Reset Account */}
@@ -884,14 +859,14 @@ const Settings = () => {
               <AlertDialogTrigger asChild>
                 <Button variant="outline" className="w-full text-amber-600 border-amber-600/50 hover:bg-amber-600/10">
                   <RefreshCw className="h-4 w-4 mr-2" />
-                  Reset Account (Start Fresh)
+                  {t("settings.resetAccount")}
                 </Button>
               </AlertDialogTrigger>
               <AlertDialogContent className="max-w-[90vw] sm:max-w-md">
                 <AlertDialogHeader>
                   <AlertDialogTitle className="flex items-center gap-2">
                     <AlertTriangle className="h-5 w-5 text-amber-500" />
-                    Reset Your Account?
+                    {t("settings.resetAccount")}?
                   </AlertDialogTitle>
                   <AlertDialogDescription>
                     This will reset all your progress including:
@@ -906,13 +881,13 @@ const Settings = () => {
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter className="flex-col sm:flex-row gap-2">
-                  <AlertDialogCancel className="w-full sm:w-auto">Cancel</AlertDialogCancel>
+                  <AlertDialogCancel className="w-full sm:w-auto">{t("common.cancel")}</AlertDialogCancel>
                   <AlertDialogAction 
                     onClick={handleResetAccount} 
                     disabled={resetLoading}
                     className="w-full sm:w-auto bg-amber-600 hover:bg-amber-700"
                   >
-                    {resetLoading ? "Resetting..." : "Yes, Reset Everything"}
+                    {resetLoading ? t("common.loading") : t("settings.resetAccount")}
                   </AlertDialogAction>
                 </AlertDialogFooter>
               </AlertDialogContent>
@@ -923,14 +898,14 @@ const Settings = () => {
               <AlertDialogTrigger asChild>
                 <Button variant="outline" className="w-full text-destructive border-destructive/50 hover:bg-destructive/10">
                   <Trash2 className="h-4 w-4 mr-2" />
-                  Delete Account Permanently
+                  {t("settings.deleteAccount")}
                 </Button>
               </AlertDialogTrigger>
               <AlertDialogContent className="max-w-[90vw] sm:max-w-md">
                 <AlertDialogHeader>
                   <AlertDialogTitle className="flex items-center gap-2 text-destructive">
                     <Trash2 className="h-5 w-5" />
-                    Delete Your Account?
+                    {t("settings.deleteAccount")}?
                   </AlertDialogTitle>
                   <AlertDialogDescription>
                     <span className="font-bold text-destructive">This action cannot be undone.</span>
@@ -946,13 +921,13 @@ const Settings = () => {
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter className="flex-col sm:flex-row gap-2">
-                  <AlertDialogCancel className="w-full sm:w-auto">Cancel</AlertDialogCancel>
+                  <AlertDialogCancel className="w-full sm:w-auto">{t("common.cancel")}</AlertDialogCancel>
                   <AlertDialogAction 
                     onClick={handleDeleteAccount} 
                     disabled={deleteLoading}
                     className="w-full sm:w-auto bg-destructive hover:bg-destructive/90"
                   >
-                    {deleteLoading ? "Deleting..." : "Yes, Delete Forever"}
+                    {deleteLoading ? t("common.loading") : t("settings.deleteAccount")}
                   </AlertDialogAction>
                 </AlertDialogFooter>
               </AlertDialogContent>
@@ -962,7 +937,7 @@ const Settings = () => {
 
             <Button onClick={handleSignOut} variant="outline" className="w-full">
               <LogOut className="h-4 w-4 mr-2" />
-              Sign Out
+              {t("settings.signOut")}
             </Button>
           </CardContent>
         </Card>

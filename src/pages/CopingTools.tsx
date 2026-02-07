@@ -58,7 +58,6 @@ const CopingTools = () => {
     setElapsedTime(0);
     setBreathingPhase("inhale");
     setIndicatorPosition({ x: 0, y: 0 });
-    // Delay start to ensure initial render
     requestAnimationFrame(() => {
       phaseStartTimeRef.current = Date.now();
       runBreathingCycle();
@@ -84,6 +83,16 @@ const CopingTools = () => {
     }
   };
 
+  const getPhaseLabel = (phase: string) => {
+    switch (phase) {
+      case "inhale": return t("coping.inhale");
+      case "hold1": 
+      case "hold2": return t("coping.hold");
+      case "exhale": return t("coping.exhale");
+      default: return "";
+    }
+  };
+
   const runBreathingCycle = () => {
     const phases: Array<"inhale" | "hold1" | "exhale" | "hold2"> = ["inhale", "hold1", "exhale", "hold2"];
     let phaseIndex = 0;
@@ -96,24 +105,23 @@ const CopingTools = () => {
       const elapsed = now - phaseStartTimeRef.current;
       const progress = Math.min(elapsed / phaseDuration, 1);
 
-      // Calculate smooth position along box edges
       let x = 0, y = 0;
       const currentPhase = phases[phaseIndex];
       
       switch (currentPhase) {
-        case "inhale": // Top edge, left to right
+        case "inhale":
           x = progress * 100;
           y = 0;
           break;
-        case "hold1": // Right edge, top to bottom
+        case "hold1":
           x = 100;
           y = progress * 100;
           break;
-        case "exhale": // Bottom edge, right to left
+        case "exhale":
           x = 100 - (progress * 100);
           y = 100;
           break;
-        case "hold2": // Left edge, bottom to top
+        case "hold2":
           x = 0;
           y = 100 - (progress * 100);
           break;
@@ -121,7 +129,6 @@ const CopingTools = () => {
 
       setIndicatorPosition({ x, y });
 
-      // Check if phase is complete
       if (progress >= 1) {
         phaseIndex = (phaseIndex + 1) % phases.length;
         if (phaseIndex === 0) {
@@ -172,7 +179,7 @@ const CopingTools = () => {
               <div className="space-y-6">
                 <div className="grid md:grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <label className="text-sm font-medium">Breathing Level (seconds per phase)</label>
+                    <label className="text-sm font-medium">{t("coping.breathingLevel")}</label>
                     <div className="flex items-center gap-2">
                       <Button variant="outline" size="icon" onClick={() => setBreathingLevel(Math.max(3, breathingLevel - 1))}>
                         <ChevronLeft className="h-4 w-4" />
@@ -185,16 +192,16 @@ const CopingTools = () => {
                   </div>
                   
                   <div className="space-y-2">
-                    <label className="text-sm font-medium">Session Duration</label>
+                    <label className="text-sm font-medium">{t("coping.sessionDuration")}</label>
                     <Select value={sessionDuration.toString()} onValueChange={(v) => setSessionDuration(parseInt(v))}>
                       <SelectTrigger>
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="1">1 minute</SelectItem>
-                        <SelectItem value="5">5 minutes</SelectItem>
-                        <SelectItem value="10">10 minutes</SelectItem>
-                        <SelectItem value="15">15 minutes</SelectItem>
+                        <SelectItem value="1">1 {t("common.minute")}</SelectItem>
+                        <SelectItem value="5">5 {t("common.minutes")}</SelectItem>
+                        <SelectItem value="10">10 {t("common.minutes")}</SelectItem>
+                        <SelectItem value="15">15 {t("common.minutes")}</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -202,16 +209,14 @@ const CopingTools = () => {
                 
                 <Button onClick={startBreathing} size="lg" className="w-full bg-gradient-primary">
                   <Play className="h-5 w-5 mr-2" />
-                  Start Breathing Exercise
+                  {t("coping.startBreathing")}
                 </Button>
               </div>
             ) : (
               <div className="space-y-6">
                 <div className="relative aspect-square max-w-md mx-auto bg-gradient-to-br from-primary/10 to-accent/10 rounded-3xl p-12 backdrop-blur-sm">
-                  {/* Box border */}
                   <div className="absolute inset-12 border-4 rounded-2xl transition-colors duration-300"
                        style={{ borderColor: getPhaseColor(breathingPhase) }}>
-                    {/* Animated indicator */}
                     <div 
                       className="absolute w-6 h-6 rounded-full shadow-2xl"
                       style={{
@@ -228,24 +233,23 @@ const CopingTools = () => {
                     </div>
                   </div>
                   
-                  {/* Center text */}
                   <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
                     <p className="text-5xl font-bold capitalize mb-3 transition-colors duration-300"
                        style={{ color: getPhaseColor(breathingPhase) }}>
-                      {breathingPhase === "hold1" || breathingPhase === "hold2" ? "Hold" : breathingPhase}
+                      {getPhaseLabel(breathingPhase)}
                     </p>
-                    <p className="text-muted-foreground text-lg">Cycle {currentCycle}/{totalCycles}</p>
+                    <p className="text-muted-foreground text-lg">{t("coping.cycle")} {currentCycle}/{totalCycles}</p>
                   </div>
                 </div>
 
                 <div className="flex justify-between items-center">
                   <div className="text-center">
-                    <p className="text-sm text-muted-foreground">Elapsed Time</p>
+                    <p className="text-sm text-muted-foreground">{t("coping.elapsedTime")}</p>
                     <p className="text-2xl font-bold">{formatTime(elapsedTime)}</p>
                   </div>
                   <Button onClick={stopBreathing} variant="destructive" size="lg">
                     <StopCircle className="h-5 w-5 mr-2 fill-current" />
-                    Stop
+                    {t("coping.stop")}
                   </Button>
                 </div>
               </div>
@@ -268,10 +272,7 @@ const CopingTools = () => {
           ))}
         </div>
 
-        {/* Guided Meditations */}
         <GuidedMeditations />
-
-        {/* AI Coping Strategies */}
         <PersonalizedStrategies />
 
         {/* Daily Affirmations */}

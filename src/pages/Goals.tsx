@@ -94,7 +94,6 @@ const Goals = () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("Not authenticated");
 
-      // Calculate target_days from date range
       const targetDays = dateRange?.from && dateRange?.to 
         ? differenceInDays(dateRange.to, dateRange.from)
         : null;
@@ -114,8 +113,8 @@ const Goals = () => {
         if (error) throw error;
 
         toast({
-          title: "Goal updated!",
-          description: "Your goal has been updated.",
+          title: t("common.success"),
+          description: t("goals.update"),
         });
       } else {
         const { error } = await supabase.from("goals").insert({
@@ -130,8 +129,8 @@ const Goals = () => {
         if (error) throw error;
 
         toast({
-          title: "Goal created!",
-          description: "Your new goal has been added.",
+          title: t("common.success"),
+          description: t("goals.create"),
         });
       }
 
@@ -143,7 +142,7 @@ const Goals = () => {
       refetch();
     } catch (error: any) {
       toast({
-        title: "Error",
+        title: t("common.error"),
         description: error.message,
         variant: "destructive",
       });
@@ -170,14 +169,14 @@ const Goals = () => {
       if (error) throw error;
 
       toast({
-        title: "Goal deleted",
-        description: "Your goal has been removed.",
+        title: t("common.success"),
+        description: t("goals.delete"),
       });
 
       refetch();
     } catch (error: any) {
       toast({
-        title: "Error",
+        title: t("common.error"),
         description: error.message,
         variant: "destructive",
       });
@@ -194,12 +193,12 @@ const Goals = () => {
       if (error) throw error;
       refetch();
       toast({
-        title: !currentStatus ? "Goal completed! 🎉" : "Goal reopened",
-        description: !currentStatus ? "Congratulations on your achievement!" : "Keep working on it!",
+        title: !currentStatus ? "🎉" : t("common.success"),
+        description: !currentStatus ? t("goals.completed") : t("goals.active"),
       });
     } catch (error: any) {
       toast({
-        title: "Error",
+        title: t("common.error"),
         description: error.message,
         variant: "destructive",
       });
@@ -219,7 +218,6 @@ const Goals = () => {
 
       if (error) throw error;
 
-      // Group by goal_id
       const grouped: Record<string, string[]> = {};
       data?.forEach((completion: any) => {
         if (!grouped[completion.goal_id]) {
@@ -246,17 +244,14 @@ const Goals = () => {
       const goal = goals?.find(g => g.id === goalId);
       if (!goal?.start_date) return;
 
-      // Calculate the completion date for this day
       const completionDate = new Date(goal.start_date);
       completionDate.setDate(completionDate.getDate() + dayNumber - 1);
       const dateStr = completionDate.toISOString().split('T')[0];
 
-      // Check if already completed
       const existingCompletions = goalCompletions?.[goalId] || [];
       const isCompleted = existingCompletions.includes(dateStr);
 
       if (isCompleted) {
-        // Remove completion
         const { error } = await supabase
           .from("goal_completions")
           .delete()
@@ -265,7 +260,6 @@ const Goals = () => {
 
         if (error) throw error;
       } else {
-        // Add completion
         const { error } = await supabase
           .from("goal_completions")
           .insert({
@@ -280,7 +274,7 @@ const Goals = () => {
       queryClient.invalidateQueries({ queryKey: ["goal-completions"] });
     } catch (error: any) {
       toast({
-        title: "Error",
+        title: t("common.error"),
         description: error.message,
         variant: "destructive",
       });
@@ -320,7 +314,6 @@ const Goals = () => {
                   <span className="hidden sm:inline">{t("goals.newGoal")}</span>
                 </Button>
               </DialogTrigger>
-              {/* Dialog content moved to main */}
             </Dialog>
           </>
         }
@@ -348,17 +341,17 @@ const Goals = () => {
         >
           <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto bg-popover/95 backdrop-blur-xl border-border/50">
             <DialogHeader>
-              <DialogTitle>{editingId ? "Edit Goal" : "Create New Goal"}</DialogTitle>
+              <DialogTitle>{editingId ? t("goals.editGoal") : t("goals.createGoal")}</DialogTitle>
               <DialogDescription>
-                Set a recovery goal with optional timeframe
+                {t("goals.setDescription")}
               </DialogDescription>
             </DialogHeader>
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="goal-title">Goal Title</Label>
+                <Label htmlFor="goal-title">{t("goals.goalTitle")}</Label>
                 <Input
                   id="goal-title"
-                  placeholder="e.g., Stay sober for 30 days"
+                  placeholder={t("goals.goalTitlePlaceholder")}
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
                   required
@@ -366,10 +359,10 @@ const Goals = () => {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="goal-description">Description (optional)</Label>
+                <Label htmlFor="goal-description">{t("goals.description")}</Label>
                 <Textarea
                   id="goal-description"
-                  placeholder="Why is this goal important to you?"
+                  placeholder={t("goals.descriptionPlaceholder")}
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
                   rows={3}
@@ -377,7 +370,7 @@ const Goals = () => {
                 />
               </div>
               <div className="space-y-2">
-                <Label>Timeframe (optional)</Label>
+                <Label>{t("goals.timeframe")}</Label>
                 <DateRangePicker
                   dateRange={dateRange}
                   onDateRangeChange={setDateRange}
@@ -391,10 +384,10 @@ const Goals = () => {
                 {loading ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    {editingId ? "Updating..." : "Creating..."}
+                    {editingId ? t("goals.updating") : t("goals.creating")}
                   </>
                 ) : (
-                  editingId ? "Update Goal" : "Create Goal"
+                  editingId ? t("goals.update") : t("goals.create")
                 )}
               </Button>
             </form>
@@ -408,9 +401,9 @@ const Goals = () => {
               <SelectValue />
             </SelectTrigger>
             <SelectContent className="bg-popover/95 backdrop-blur-xl">
-              <SelectItem value="all">All Goals</SelectItem>
-              <SelectItem value="active">Active</SelectItem>
-              <SelectItem value="completed">Completed</SelectItem>
+              <SelectItem value="all">{t("goals.allGoals")}</SelectItem>
+              <SelectItem value="active">{t("goals.active")}</SelectItem>
+              <SelectItem value="completed">{t("goals.completed")}</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -426,9 +419,9 @@ const Goals = () => {
               />
             </div>
             <div className="max-w-md mx-auto">
-              <h3 className="text-xl font-semibold mb-3 bg-gradient-primary bg-clip-text text-transparent">Start Your Recovery Journey</h3>
+              <h3 className="text-xl font-semibold mb-3 bg-gradient-primary bg-clip-text text-transparent">{t("goals.emptyTitle")}</h3>
               <p className="text-muted-foreground mb-6 leading-relaxed">
-                Setting clear goals is a powerful way to strengthen your recovery journey. Whether it's staying sober for 30 days or developing new healthy habits, each goal is a step forward.
+                {t("goals.emptyDescription")}
               </p>
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-center">
                 <Button 
@@ -437,7 +430,7 @@ const Goals = () => {
                   size="lg"
                 >
                   <Plus className="h-5 w-5 mr-2" />
-                  Create First Goal
+                  {t("goals.createFirst")}
                 </Button>
                 <Button 
                   variant="outline" 
@@ -446,7 +439,7 @@ const Goals = () => {
                   className="group"
                 >
                   <Sparkles className="h-5 w-5 mr-2 text-primary group-hover:text-primary/70" />
-                  Get AI Suggestions
+                  {t("goals.getAISuggestions")}
                 </Button>
               </div>
             </div>
@@ -497,18 +490,18 @@ const Goals = () => {
                           </AlertDialogTrigger>
                           <AlertDialogContent className="bg-popover/95 backdrop-blur-xl border-border/50">
                             <AlertDialogHeader>
-                              <AlertDialogTitle>Delete Goal?</AlertDialogTitle>
+                              <AlertDialogTitle>{t("goals.deleteTitle")}</AlertDialogTitle>
                               <AlertDialogDescription>
-                                This action cannot be undone. This goal will be permanently deleted.
+                                {t("goals.deleteDescription")}
                               </AlertDialogDescription>
                             </AlertDialogHeader>
                             <AlertDialogFooter>
-                              <AlertDialogCancel>Cancel</AlertDialogCancel>
+                              <AlertDialogCancel>{t("goals.cancel")}</AlertDialogCancel>
                               <AlertDialogAction
                                 onClick={() => handleDelete(goal.id)}
                                 className="bg-destructive hover:bg-destructive/90"
                               >
-                                Delete
+                                {t("goals.delete")}
                               </AlertDialogAction>
                             </AlertDialogFooter>
                           </AlertDialogContent>
@@ -520,14 +513,13 @@ const Goals = () => {
                     <CardContent>
                       <div className="space-y-3">
                         <div className="flex justify-between text-sm">
-                          <span className="text-muted-foreground">Progress</span>
+                          <span className="text-muted-foreground">{t("progress.goalsProgress")}</span>
                           <span className="font-semibold">
-                            {goalCompletions?.[goal.id]?.length || 0} / {goal.target_days} days
+                            {goalCompletions?.[goal.id]?.length || 0} / {goal.target_days} {t("checkIn.days")}
                           </span>
                         </div>
                         <Progress value={progress} className="h-2" />
                         
-                        {/* Daily tick checkboxes */}
                         <div className="pt-2">
                           <p className="text-xs text-muted-foreground mb-2">Track your daily progress:</p>
                           <div className="flex flex-wrap gap-2">

@@ -277,6 +277,7 @@ export const ta: Record<TranslationKey, string> = {
   "onboarding.addiction.other": "மற்றவை",
 
   // Common
+  "common.back": "பின்செல்",
   "common.save": "சேமி",
   "common.cancel": "ரத்து",
   "common.delete": "நீக்கு",
