@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import StorageImage from "@/components/StorageImage";
 import { useSidebarOrder } from "@/hooks/useSidebarOrder";
+import { useLanguage } from "@/contexts/LanguageContext";
 
 import {
   Sidebar,
@@ -18,19 +19,21 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 
-const allMenuItems = [
-  { title: "Dashboard", url: "/", icon: Home },
-  { title: "Check In", url: "/check-in", icon: Heart },
-  { title: "Journal", url: "/journal", icon: BookOpen },
-  { title: "Goals", url: "/goals", icon: Target },
-  { title: "Coping Tools", url: "/coping", icon: Activity },
-  { title: "Progress", url: "/progress", icon: TrendingUp },
-  { title: "Achievements", url: "/achievements", icon: Trophy },
-  { title: "Wearables", url: "/wearables", icon: Watch },
-  { title: "AI Coach", url: "/ai-agent", icon: Bot },
-  { title: "AI Insights", url: "/ai-observability", icon: Brain },
-  { title: "Community", url: "/community", icon: Users },
-  { title: "Settings", url: "/settings", icon: Settings },
+import type { TranslationKey } from "@/i18n/en";
+
+const allMenuItems: Array<{ titleKey: TranslationKey; title: string; url: string; icon: any }> = [
+  { titleKey: "nav.dashboard", title: "Dashboard", url: "/", icon: Home },
+  { titleKey: "nav.checkIn", title: "Check In", url: "/check-in", icon: Heart },
+  { titleKey: "nav.journal", title: "Journal", url: "/journal", icon: BookOpen },
+  { titleKey: "nav.goals", title: "Goals", url: "/goals", icon: Target },
+  { titleKey: "nav.copingTools", title: "Coping Tools", url: "/coping", icon: Activity },
+  { titleKey: "nav.progress", title: "Progress", url: "/progress", icon: TrendingUp },
+  { titleKey: "nav.achievements", title: "Achievements", url: "/achievements", icon: Trophy },
+  { titleKey: "nav.wearables", title: "Wearables", url: "/wearables", icon: Watch },
+  { titleKey: "nav.aiCoach", title: "AI Coach", url: "/ai-agent", icon: Bot },
+  { titleKey: "nav.aiInsights", title: "AI Insights", url: "/ai-observability", icon: Brain },
+  { titleKey: "nav.community", title: "Community", url: "/community", icon: Users },
+  { titleKey: "nav.settings", title: "Settings", url: "/settings", icon: Settings },
 ];
 
 export function AppSidebar() {
@@ -39,6 +42,7 @@ export function AppSidebar() {
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
   const [isDevUnlocked, setIsDevUnlocked] = useState(false);
   const { order } = useSidebarOrder();
+  const { t } = useLanguage();
 
   // Check dev tools unlock state
   useEffect(() => {
@@ -52,22 +56,17 @@ export function AppSidebar() {
 
   // Build ordered menu items
   const menuItems = useMemo(() => {
-    // Dashboard is always first
     const dashboard = allMenuItems.find(item => item.title === "Dashboard")!;
-    // Settings is always last
     const settings = allMenuItems.find(item => item.title === "Settings")!;
     
-    // Get all middle items (excluding Dashboard and Settings)
     const allMiddleItems = allMenuItems.filter(item => 
       item.title !== "Dashboard" && item.title !== "Settings"
     );
     
-    // Order based on saved order, but include any new items not in the saved order
     const orderedItems = order
       .map(title => allMiddleItems.find(item => item.title === title))
       .filter((item): item is typeof allMenuItems[number] => item !== undefined);
     
-    // Add any items that exist in allMiddleItems but not in saved order (new items)
     const newItems = allMiddleItems.filter(item => !order.includes(item.title));
     
     return [dashboard, ...orderedItems, ...newItems, settings];
@@ -77,17 +76,15 @@ export function AppSidebar() {
   useEffect(() => {
     const fetchLogo = async () => {
       try {
-        // Prefer the explicit filename used elsewhere so mobile/desktop use the same image when present
         const { data: pubData } = supabase.storage.from('logos').getPublicUrl('logo.png');
         if (pubData?.publicUrl) {
           setLogoUrl(pubData.publicUrl);
           return;
         }
       } catch (e) {
-        // ignore and fallback to listing
+        // ignore
       }
 
-      // Fallback: list files and use the first available public url
       try {
         const { data: files } = await supabase.storage.from('logos').list();
         if (files && files.length > 0) {
@@ -95,26 +92,22 @@ export function AppSidebar() {
           setLogoUrl(data?.publicUrl ?? null);
         }
       } catch (e) {
-        // leave logoUrl as null so local fallback is used
         setLogoUrl(null);
       }
     };
     fetchLogo();
   }, []);
 
-  // Close sidebar on mobile when clicking a link
   const handleNavClick = () => {
     if (isMobile) {
       setOpenMobile(false);
     }
   };
 
-  // Check if sidebar should be visible on mobile
   const isVisible = isMobile ? openMobile : true;
 
   return (
     <>
-      {/* Mobile overlay */}
       {isMobile && openMobile && (
         <div 
           className="fixed inset-0 bg-background/80 backdrop-blur-sm z-40"
@@ -132,7 +125,6 @@ export function AppSidebar() {
         <div className="flex items-center justify-between px-3 py-6 border-b border-border/30 min-h-[73px]">
           {(!collapsed || isMobile) && (
             <div className="flex items-center gap-2">
-              {/* Show the logo image only on mobile, but always show the title text on tablet/desktop */}
               {isMobile ? (
                 <>
                   <StorageImage
@@ -148,8 +140,6 @@ export function AppSidebar() {
               )}
             </div>
           )}
-          {/* When collapsed (desktop/tablet), don't render the logo — only the collapse arrow should be visible.
-              The button below uses `mx-auto` when collapsed to center the arrow. */}
           <Button 
             variant="ghost" 
             size="icon" 
@@ -165,7 +155,6 @@ export function AppSidebar() {
           <ul className="space-y-1">
             {menuItems
               .filter(item => {
-                // Hide AI Developer unless unlocked
                 if (item.url === '/ai-observability') {
                   return isDevUnlocked;
                 }
@@ -184,10 +173,10 @@ export function AppSidebar() {
                         : "hover:bg-muted/50 text-muted-foreground hover:text-foreground"
                     } ${collapsed && !isMobile ? "justify-center" : ""}`
                   }
-                  title={collapsed && !isMobile ? item.title : undefined}
+                  title={collapsed && !isMobile ? t(item.titleKey) : undefined}
                 >
                   <item.icon className="h-5 w-5 shrink-0" />
-                  {(!collapsed || isMobile) && <span className="truncate text-sm">{item.title}</span>}
+                  {(!collapsed || isMobile) && <span className="truncate text-sm">{t(item.titleKey)}</span>}
                 </NavLink>
               </li>
             ))}
@@ -197,4 +186,3 @@ export function AppSidebar() {
     </>
   );
 }
-

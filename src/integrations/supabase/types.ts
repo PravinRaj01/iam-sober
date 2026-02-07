@@ -622,6 +622,7 @@ export type Database = {
           notification_preferences: Json | null
           onboarding_completed: boolean | null
           points: number | null
+          preferred_language: string | null
           privacy_settings: Json | null
           pseudonym: string | null
           sobriety_start_date: string
@@ -640,6 +641,7 @@ export type Database = {
           notification_preferences?: Json | null
           onboarding_completed?: boolean | null
           points?: number | null
+          preferred_language?: string | null
           privacy_settings?: Json | null
           pseudonym?: string | null
           sobriety_start_date?: string
@@ -658,6 +660,7 @@ export type Database = {
           notification_preferences?: Json | null
           onboarding_completed?: boolean | null
           points?: number | null
+          preferred_language?: string | null
           privacy_settings?: Json | null
           pseudonym?: string | null
           sobriety_start_date?: string

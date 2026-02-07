@@ -3,11 +3,14 @@ import { createRoot } from "react-dom/client";
 import App from "./App.tsx";
 import "./index.css";
 import { BackgroundProvider } from "./contexts/BackgroundContext";
+import { LanguageProvider } from "./contexts/LanguageContext";
 
 createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
-    <BackgroundProvider>
-      <App />
-    </BackgroundProvider>
+    <LanguageProvider>
+      <BackgroundProvider>
+        <App />
+      </BackgroundProvider>
+    </LanguageProvider>
   </React.StrictMode>
 );
