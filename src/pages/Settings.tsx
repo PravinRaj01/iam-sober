@@ -9,13 +9,15 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { Bell, User, Shield, LogOut, Sparkles, Info, RefreshCw, Trash2, AlertTriangle, Gamepad2, CheckCircle2, Loader2 } from "lucide-react";
+import { Bell, User, Shield, LogOut, Sparkles, Info, RefreshCw, Trash2, AlertTriangle, Gamepad2, CheckCircle2, Loader2, Globe } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 import { useBackground } from "@/contexts/BackgroundContext";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { PageHeader } from "@/components/layout/PageHeader";
 import SidebarOrderEditor from "@/components/SidebarOrderEditor";
 import { usePushNotifications } from "@/hooks/usePushNotifications";
+import { useLanguage } from "@/contexts/LanguageContext";
+import { languageNames, type Language } from "@/i18n";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -404,11 +406,38 @@ const Settings = () => {
     setLastTapTime(now);
   }, [tapCount, lastTapTime, toast, navigate]);
 
+  const { language, setLanguage, t } = useLanguage();
+
   return (
     <div className="min-h-screen bg-background">
-      <PageHeader title="Settings" subtitle="Manage your account and preferences" />
+      <PageHeader title={t("settings.title")} subtitle={t("settings.subtitle")} />
 
       <main className="container mx-auto px-4 py-8 max-w-3xl animate-fade-in space-y-6">
+
+        {/* Language Selector */}
+        <Card className="bg-card/50 backdrop-blur-lg border-border/50">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Globe className="h-5 w-5" />
+              {t("settings.language")}
+            </CardTitle>
+            <CardDescription>{t("settings.languageDesc")}</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-3 gap-3">
+              {(["en", "ms", "ta"] as Language[]).map((lang) => (
+                <Button
+                  key={lang}
+                  variant={language === lang ? "default" : "outline"}
+                  className={`w-full ${language === lang ? "" : "hover:bg-muted/50"}`}
+                  onClick={() => setLanguage(lang)}
+                >
+                  {languageNames[lang]}
+                </Button>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
 
         {/* Profile Settings */}
         <Card className="bg-card/50 backdrop-blur-lg border-border/50">
