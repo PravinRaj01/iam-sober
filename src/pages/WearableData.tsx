@@ -28,6 +28,7 @@ export default function WearableData() {
 
   const [analysis, setAnalysis] = useState<any>(null);
   const [connecting, setConnecting] = useState(false);
+  const [disconnecting, setDisconnecting] = useState(false);
 
   // Check if Fitbit is connected
   const { data: profile } = useQuery({
@@ -130,10 +131,14 @@ export default function WearableData() {
         description: `Latest data: ${data.data.steps} steps, ${data.data.sleep_hours.toFixed(1)}h sleep, ${data.data.heart_rate} bpm`,
       });
     },
-    onError: () => {
+    onError: (error: any) => {
+      const message = error?.message || "Could not sync Fitbit data.";
+      const needsReconnect = message.includes("not connected") || message.includes("reconnect");
       toast({
         title: "Sync Failed",
-        description: "Could not sync Fitbit data. Please try again.",
+        description: needsReconnect 
+          ? "Your Fitbit connection needs to be refreshed. Please disconnect and reconnect."
+          : "Could not sync Fitbit data. Please try again.",
         variant: "destructive",
       });
     },
@@ -243,6 +248,41 @@ export default function WearableData() {
     }
   };
 
+  const handleDisconnectFitbit = async () => {
+    setDisconnecting(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error("Not authenticated");
+
+      const response = await fetch(
+        `https://jivpbjhroujuoatdqtpx.supabase.co/functions/v1/fitbit-auth?action=disconnect`,
+        {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${session.access_token}`,
+            "Content-Type": "application/json",
+          },
+        }
+      );
+
+      if (!response.ok) throw new Error("Failed to disconnect Fitbit");
+
+      queryClient.invalidateQueries({ queryKey: ["profile-wearable"] });
+      toast({
+        title: "Fitbit Disconnected",
+        description: "Your Fitbit account has been unlinked. You can reconnect anytime.",
+      });
+    } catch (error: any) {
+      toast({
+        title: "Disconnect Failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    } finally {
+      setDisconnecting(false);
+    }
+  };
+
   const getSeverityColor = (severity: string) => {
     switch (severity) {
       case "high": return "bg-destructive text-destructive-foreground";
@@ -302,6 +342,19 @@ export default function WearableData() {
                           <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Syncing...</>
                         ) : (
                           "Sync Now"
+                        )}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="w-full text-destructive hover:text-destructive"
+                        onClick={handleDisconnectFitbit}
+                        disabled={disconnecting}
+                      >
+                        {disconnecting ? (
+                          <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Disconnecting...</>
+                        ) : (
+                          "Disconnect"
                         )}
                       </Button>
                     </div>
