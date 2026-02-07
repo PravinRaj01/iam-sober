@@ -1,1 +1,67 @@
 project_id = "jivpbjhroujuoatdqtpx"
+
+[functions.chat-with-ai]
+verify_jwt = false
+
+[functions.analyze-biometrics]
+verify_jwt = false
+
+[functions.analyze-journal-sentiment]
+verify_jwt = false
+
+[functions.check-admin-status]
+verify_jwt = false
+
+[functions.check-ownership]
+verify_jwt = false
+
+[functions.detect-mood-patterns]
+verify_jwt = false
+
+[functions.detect-triggers]
+verify_jwt = false
+
+[functions.fitbit-auth]
+verify_jwt = false
+
+[functions.generate-meditation]
+verify_jwt = false
+
+[functions.generate-motivation]
+verify_jwt = false
+
+[functions.get-vapid-key]
+verify_jwt = false
+
+[functions.moderate-content]
+verify_jwt = false
+
+[functions.proactive-check]
+verify_jwt = false
+
+[functions.reset-user-data]
+verify_jwt = false
+
+[functions.send-daily-reminder]
+verify_jwt = false
+
+[functions.send-milestone-alert]
+verify_jwt = false
+
+[functions.send-push-notification]
+verify_jwt = false
+
+[functions.send-supporter-notification]
+verify_jwt = false
+
+[functions.send-weekly-report]
+verify_jwt = false
+
+[functions.suggest-coping-strategies]
+verify_jwt = false
+
+[functions.suggest-recovery-goals]
+verify_jwt = false
+
+[functions.transcribe-audio]
+verify_jwt = false
