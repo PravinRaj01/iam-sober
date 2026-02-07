@@ -7,6 +7,7 @@ import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { useSidebar } from "@/components/ui/sidebar";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { useLanguage } from "@/contexts/LanguageContext";
 import ChatbotMiniView from "./ChatbotMiniView";
 import ChatbotFullView from "./ChatbotFullView";
 
@@ -27,6 +28,7 @@ const ChatbotDrawer = ({ state, onStateChange }: ChatbotDrawerProps) => {
   const queryClient = useQueryClient();
   const { state: sidebarState } = useSidebar();
   const isMobile = useIsMobile();
+  const { language } = useLanguage();
   const sidebarWidth = sidebarState === "collapsed" ? "left-16" : "left-60";
 
   // Fetch or create default conversation
@@ -182,6 +184,7 @@ const ChatbotDrawer = ({ state, onStateChange }: ChatbotDrawerProps) => {
           body: JSON.stringify({
             message: userInput,
             conversationHistory: conversationHistory,
+            preferred_language: language,
           }),
         }
       );

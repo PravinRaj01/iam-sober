@@ -30,8 +30,10 @@ import AISuggestDialog from "@/components/goals/AISuggestDialog";
 import { DateRange } from "react-day-picker";
 import StorageImage from "@/components/StorageImage";
 import { PageHeader } from "@/components/layout/PageHeader";
+import { useLanguage } from "@/contexts/LanguageContext";
 
 const Goals = () => {
+  const { t } = useLanguage();
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [dateRange, setDateRange] = useState<DateRange | undefined>();
@@ -288,7 +290,7 @@ const Goals = () => {
   return (
     <div className="flex-1 bg-gradient-calm min-h-screen">
       <PageHeader 
-        title="Recovery Goals" 
+        title={t("goals.title")} 
         actions={
           <>
             <Button 
@@ -298,7 +300,7 @@ const Goals = () => {
               className="group"
             >
               <Sparkles className="h-4 w-4 sm:mr-2 text-primary group-hover:text-primary/70" />
-              <span className="hidden sm:inline">AI Suggest</span>
+              <span className="hidden sm:inline">{t("goals.aiSuggest")}</span>
             </Button>
             <Dialog
               open={dialogOpen}
@@ -315,7 +317,7 @@ const Goals = () => {
               <DialogTrigger asChild>
                 <Button className="bg-gradient-primary" size="sm">
                   <Plus className="h-4 w-4 sm:mr-2" />
-                  <span className="hidden sm:inline">New Goal</span>
+                  <span className="hidden sm:inline">{t("goals.newGoal")}</span>
                 </Button>
               </DialogTrigger>
               {/* Dialog content moved to main */}

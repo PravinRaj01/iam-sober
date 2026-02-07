@@ -11,8 +11,10 @@ import MilestoneCard from "@/components/community/MilestoneCard";
 import ShareMilestoneDialog from "@/components/community/ShareMilestoneDialog";
 import CommunityStatsDialog from "@/components/community/CommunityStatsDialog";
 import { PageHeader } from "@/components/layout/PageHeader";
+import { useLanguage } from "@/contexts/LanguageContext";
 
 const Community = () => {
+  const { t } = useLanguage();
   const navigate = useNavigate();
   const [shareDialogOpen, setShareDialogOpen] = useState(false);
   const [statsDialogOpen, setStatsDialogOpen] = useState(false);
@@ -204,7 +206,7 @@ const Community = () => {
   return (
     <div className="flex-1 bg-gradient-calm min-h-screen">
       <PageHeader 
-        title="Community" 
+        title={t("community.title")} 
         actions={
           <div className="flex gap-2 flex-wrap shrink-0">
             <Button
@@ -213,7 +215,7 @@ const Community = () => {
               onClick={() => setStatsDialogOpen(true)}
             >
               <Info className="h-4 w-4 sm:mr-2" />
-              <span className="hidden sm:inline">Stats</span>
+              <span className="hidden sm:inline">{t("community.stats")}</span>
             </Button>
             <Button
               variant="outline"
@@ -221,7 +223,7 @@ const Community = () => {
               onClick={() => refetch()}
             >
               <RefreshCw className="h-4 w-4 sm:mr-2" />
-              <span className="hidden sm:inline">Refresh</span>
+              <span className="hidden sm:inline">{t("community.refresh")}</span>
             </Button>
             <Button
               onClick={() => setShareDialogOpen(true)}
@@ -229,8 +231,8 @@ const Community = () => {
               size="sm"
             >
               <Plus className="h-4 w-4 mr-2" />
-              <span className="hidden sm:inline">Share</span>
-              <span className="sm:hidden">New</span>
+              <span className="hidden sm:inline">{t("community.share")}</span>
+              <span className="sm:hidden">{t("community.new")}</span>
             </Button>
           </div>
         }

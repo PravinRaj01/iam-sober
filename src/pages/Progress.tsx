@@ -10,10 +10,12 @@ import { Badge } from "@/components/ui/badge";
 import { ProgressCharts } from "@/components/progress/ProgressCharts";
 import BiometricTrendsChart from "@/components/BiometricTrendsChart";
 import { PageHeader } from "@/components/layout/PageHeader";
+import { useLanguage } from "@/contexts/LanguageContext";
 
 const RELAPSES_PER_PAGE = 5;
 
 const Progress = () => {
+  const { t } = useLanguage();
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [relapseDialogOpen, setRelapseDialogOpen] = useState(false);
@@ -153,12 +155,12 @@ const Progress = () => {
 
   return (
     <div className="flex-1 bg-gradient-calm min-h-screen">
-      <PageHeader title="Progress" />
+      <PageHeader title={t("progress.title")} />
 
       <main className="container mx-auto px-4 py-8 max-w-6xl animate-fade-in space-y-6">
         <div className="hidden md:block">
-          <h1 className="text-3xl font-bold mb-2">Progress & History</h1>
-          <p className="text-muted-foreground">Your recovery journey visualized</p>
+          <h1 className="text-3xl font-bold mb-2">{t("progress.fullTitle")}</h1>
+          <p className="text-muted-foreground">{t("progress.subtitle")}</p>
         </div>
 
         {/* Advanced Insights */}

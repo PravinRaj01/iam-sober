@@ -27,6 +27,7 @@ import { useLevelUp } from "@/hooks/useLevelUp";
 
 import HealthStatusCard from "@/components/HealthStatusCard";
 import { useSessionManager, clearSessionInfo } from "@/hooks/useSessionManager";
+import { useLanguage } from "@/contexts/LanguageContext";
 
 const Dashboard = () => {
   const [user, setUser] = useState<User | null>(null);
@@ -34,6 +35,7 @@ const Dashboard = () => {
   const { backgroundImage, setBackgroundImage } = useBackground();
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { t } = useLanguage();
   
   // Session expiry check
   useSessionManager();
@@ -50,12 +52,10 @@ const Dashboard = () => {
 
       if (error) throw error;
       
-      // Set background image only if it's different
       if (data?.background_image_url && data.background_image_url !== backgroundImage) {
         setBackgroundImage(data.background_image_url);
       }
       
-      // Check onboarding
       if (!data?.onboarding_completed) {
         navigate("/onboarding");
       }
@@ -125,18 +125,17 @@ const Dashboard = () => {
     clearSessionInfo();
     await supabase.auth.signOut();
     toast({
-      title: "Signed out",
+      title: t("dashboard.signOut"),
       description: "You've been signed out successfully.",
     });
   };
 
-  // Call hooks before any conditional returns
   const { showLevelUp, oldLevel, newLevel, closeLevelUp } = useLevelUp(profile);
 
   if (!user || !profile) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-calm">
-        <div className="animate-pulse text-muted-foreground">Loading...</div>
+        <div className="animate-pulse text-muted-foreground">{t("dashboard.loading")}</div>
       </div>
     );
   }
@@ -144,9 +143,15 @@ const Dashboard = () => {
   const daysSober = differenceInDays(new Date(), new Date(profile.sobriety_start_date));
   const hoursSober = differenceInHours(new Date(), new Date(profile.sobriety_start_date));
 
+  const getGreeting = () => {
+    const hour = new Date().getHours();
+    if (hour < 12) return t("dashboard.greeting.morning");
+    if (hour < 18) return t("dashboard.greeting.afternoon");
+    return t("dashboard.greeting.evening");
+  };
+
   return (
     <div className="flex-1 flex flex-col min-h-screen relative">
-      {/* Global background */}
       {backgroundImage && (
         <>
           <div 
@@ -157,7 +162,6 @@ const Dashboard = () => {
         </>
       )}
       
-      {/* Header */}
       <header className="bg-card/80 backdrop-blur-xl border-b border-border/50 sticky top-0 z-40 shadow-soft">
         <div className="px-3 sm:px-6 py-3 sm:py-4 flex items-center justify-between gap-2">
           <div className="flex items-center gap-2 sm:gap-4 min-w-0 flex-1">
@@ -173,79 +177,69 @@ const Dashboard = () => {
             </div>
             <div className="min-w-0 flex-1">
               <h1 className="text-sm sm:text-lg font-semibold truncate">
-                Good {new Date().getHours() < 12 ? "morning" : new Date().getHours() < 18 ? "afternoon" : "evening"}, {profile.pseudonym}
+                {getGreeting()}, {profile.pseudonym}
               </h1>
-              <p className="text-xs sm:text-sm text-muted-foreground truncate hidden sm:block">Keep up the amazing work on your recovery journey!</p>
+              <p className="text-xs sm:text-sm text-muted-foreground truncate hidden sm:block">{t("dashboard.subtitle")}</p>
             </div>
           </div>
           <Button variant="outline" size="sm" onClick={handleSignOut} className="shrink-0">
             <LogOut className="h-4 w-4 sm:mr-2" />
-            <span className="hidden sm:inline">Sign Out</span>
+            <span className="hidden sm:inline">{t("dashboard.signOut")}</span>
           </Button>
         </div>
       </header>
 
-      {/* Main Content */}
       <main className="flex-1 p-3 sm:p-4 lg:p-6 overflow-auto relative z-10">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6 max-w-7xl mx-auto">
-          {/* Left Column - Main Stats Grid */}
           <div className="lg:col-span-2 space-y-4 sm:space-y-6">
-            {/* Sobriety Counter - Full width prominent placement */}
             <SobrietyCounter
               startDate={profile.sobriety_start_date}
               onRelapseRecorded={refetchProfile}
             />
             
-            {/* Stats Grid */}
             <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
               <StatCard
-                title="Days Sober"
+                title={t("dashboard.daysSober")}
                 value={daysSober}
-                subtitle="Keep going strong!"
+                subtitle={t("dashboard.daysSober.subtitle")}
                 icon={Calendar}
                 gradient="bg-warning"
                 className="col-span-2"
               />
               <StatCard
-                title="Total Hours"
+                title={t("dashboard.totalHours")}
                 value={hoursSober}
-                subtitle="Hour by hour"
+                subtitle={t("dashboard.totalHours.subtitle")}
                 icon={TrendingUp}
                 gradient="bg-gradient-primary"
               />
               <StatCard
-                title="Check-ins"
+                title={t("dashboard.checkIns")}
                 value={checkInsCount || 0}
-                subtitle="This week"
+                subtitle={t("dashboard.checkIns.subtitle")}
                 icon={Heart}
                 gradient="bg-success"
               />
               <StatCard
-                title="Goals Met"
+                title={t("dashboard.goalsMet")}
                 value={`${goalsData?.completed || 0}`}
-                subtitle={`Out of ${goalsData?.total || 0}`}
+                subtitle={`${t("dashboard.goalsMet.subtitle")} ${goalsData?.total || 0}`}
                 icon={Target}
                 gradient="bg-accent"
               />
               <StatCard
-                title="Streak"
+                title={t("dashboard.streak")}
                 value={`${daysSober}d`}
-                subtitle="Current streak"
+                subtitle={t("dashboard.streak.subtitle")}
                 gradient="bg-gradient-purple"
               />
             </div>
 
-            {/* Milestones */}
             <MilestonesBadges startDate={profile.sobriety_start_date} />
-
-            {/* Weekly Patterns Card */}
             <WeeklyPatternsCard />
-
-            {/* Motivation Card */}
             <MotivationCard />
           </div>
 
-          {/* Right Column - Activity Feed & Community */}
           <div className="lg:col-span-1 space-y-4 sm:space-y-6">
             <HealthStatusCard />
             <RecentCommunityCard />
@@ -254,22 +248,18 @@ const Dashboard = () => {
         </div>
       </main>
 
-      {/* AI Chatbot */}
       <ChatbotButton 
         onClick={() => setChatbotState(chatbotState === 'closed' ? 'mini' : 'closed')} 
         state={chatbotState} 
       />
       <ChatbotDrawer state={chatbotState} onStateChange={setChatbotState} />
       
-      
-      {/* Level Up Dialog */}
       <LevelUpDialog
         open={showLevelUp}
         onClose={closeLevelUp}
         oldLevel={oldLevel}
         newLevel={newLevel}
       />
-      
     </div>
   );
 };

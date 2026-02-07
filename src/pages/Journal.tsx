@@ -26,8 +26,10 @@ import SentimentBadge from "@/components/journal/SentimentBadge";
 import TriggerDetector from "@/components/journal/TriggerDetector";
 import StorageImage from "@/components/StorageImage";
 import { PageHeader } from "@/components/layout/PageHeader";
+import { useLanguage } from "@/contexts/LanguageContext";
 
 const Journal = () => {
+  const { t } = useLanguage();
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
   const [loading, setLoading] = useState(false);
@@ -235,7 +237,7 @@ const Journal = () => {
   return (
     <div className="flex-1 bg-gradient-calm min-h-screen">
       <PageHeader 
-        title="Journal" 
+        title={t("journal.title")} 
         actions={
           <Dialog
             open={dialogOpen}
@@ -251,29 +253,29 @@ const Journal = () => {
             <DialogTrigger asChild>
               <Button className="bg-gradient-primary" size="sm">
                 <Plus className="h-4 w-4 sm:mr-2" />
-                <span className="hidden sm:inline">New Entry</span>
+                <span className="hidden sm:inline">{t("journal.newEntry")}</span>
               </Button>
             </DialogTrigger>
             <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto bg-popover/95 backdrop-blur-xl border-border/50">
               <DialogHeader>
-                <DialogTitle>{editingId ? "Edit Journal Entry" : "New Journal Entry"}</DialogTitle>
+                <DialogTitle>{editingId ? t("journal.editEntry") : t("journal.newEntryTitle")}</DialogTitle>
               </DialogHeader>
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div className="space-y-2">
-                  <Label htmlFor="title">Title (optional)</Label>
+                  <Label htmlFor="title">{t("journal.titleLabel")}</Label>
                   <Input
                     id="title"
-                    placeholder="Entry title..."
+                    placeholder={t("journal.titlePlaceholder")}
                     value={title}
                     onChange={(e) => setTitle(e.target.value)}
                     disabled={loading}
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="content">Your thoughts</Label>
+                  <Label htmlFor="content">{t("journal.contentLabel")}</Label>
                   <Textarea
                     id="content"
-                    placeholder="Write freely about your day, feelings, challenges, or wins..."
+                    placeholder={t("journal.contentPlaceholder")}
                     value={content}
                     onChange={(e) => setContent(e.target.value)}
                     rows={8}
@@ -292,10 +294,10 @@ const Journal = () => {
                   {loading ? (
                     <>
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      {editingId ? "Updating..." : "Saving..."}
+                      {editingId ? t("journal.updating") : t("journal.saving")}
                     </>
                   ) : (
-                    editingId ? "Update Entry" : "Save Entry"
+                    editingId ? t("journal.update") : t("journal.save")
                   )}
                 </Button>
               </form>
@@ -310,7 +312,7 @@ const Journal = () => {
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
-                placeholder="Search entries..."
+                placeholder={t("journal.search")}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="pl-9 bg-card/50 backdrop-blur-sm"
@@ -330,9 +332,9 @@ const Journal = () => {
               />
             </div>
             <div className="max-w-md mx-auto">
-              <h3 className="text-xl font-semibold mb-3 bg-gradient-primary bg-clip-text text-transparent">Your Recovery Journal Awaits</h3>
+              <h3 className="text-xl font-semibold mb-3 bg-gradient-primary bg-clip-text text-transparent">{t("journal.emptyTitle")}</h3>
               <p className="text-muted-foreground mb-6 leading-relaxed">
-                Writing about your journey helps process emotions and track your progress. Our AI-powered sentiment analysis can help you understand your emotional patterns.
+                {t("journal.emptyDescription")}
               </p>
               
               {/* Sample Entry Preview */}
@@ -355,7 +357,7 @@ const Journal = () => {
                 size="lg"
               >
                 <Edit2 className="h-5 w-5 mr-2" />
-                Write Your First Entry
+                {t("journal.writeFirst")}
               </Button>
             </div>
           </Card>
@@ -401,18 +403,18 @@ const Journal = () => {
                         </AlertDialogTrigger>
                         <AlertDialogContent className="bg-popover/95 backdrop-blur-xl border-border/50">
                           <AlertDialogHeader>
-                            <AlertDialogTitle>Delete Entry?</AlertDialogTitle>
+                            <AlertDialogTitle>{t("journal.deleteTitle")}</AlertDialogTitle>
                             <AlertDialogDescription>
-                              This action cannot be undone. This entry will be permanently deleted.
+                              {t("journal.deleteDescription")}
                             </AlertDialogDescription>
                           </AlertDialogHeader>
                           <AlertDialogFooter>
-                            <AlertDialogCancel>Cancel</AlertDialogCancel>
+                            <AlertDialogCancel>{t("journal.cancel")}</AlertDialogCancel>
                             <AlertDialogAction
                               onClick={() => handleDelete(entry.id)}
                               className="bg-destructive hover:bg-destructive/90"
                             >
-                              Delete
+                              {t("journal.delete")}
                             </AlertDialogAction>
                           </AlertDialogFooter>
                         </AlertDialogContent>

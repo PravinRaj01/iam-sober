@@ -46,6 +46,174 @@ function sanitizeInput(input: string, maxLength: number = 5000): string {
   return sanitized;
 }
 
+// ============================================================
+// LANGUAGE DETECTION
+// ============================================================
+
+function detectLanguage(message: string, preferredLanguage?: string): "en" | "ms" | "ta" {
+  // Priority 1: User profile preference
+  if (preferredLanguage && ["en", "ms", "ta"].includes(preferredLanguage)) {
+    return preferredLanguage as "en" | "ms" | "ta";
+  }
+
+  // Priority 2: Tamil script detection (U+0B80-U+0BFF)
+  const tamilScriptRegex = /[\u0B80-\u0BFF]/;
+  if (tamilScriptRegex.test(message)) return "ta";
+
+  // Priority 3: Malay keyword detection
+  const malayKeywords = ["saya", "aku", "kamu", "awak", "nak", "boleh", "tak", "tidak", "macam", "mana", "kenapa", "bagaimana", "terima kasih", "tolong", "lah", "kan", "buat", "hari", "sudah"];
+  const lowerMsg = message.toLowerCase();
+  const malayCount = malayKeywords.filter(kw => lowerMsg.includes(kw)).length;
+  if (malayCount >= 2) return "ms";
+
+  // Priority 4: Tamil romanized (Tanglish) keyword detection
+  const tamilRomanKeywords = ["naan", "nee", "enna", "epdi", "romba", "thala", "nanba", "panna", "vaanga", "sollu", "theriyum", "theriyala", "aamam", "illai", "nandri", "pomozhuthu"];
+  const tamilRomanCount = tamilRomanKeywords.filter(kw => lowerMsg.includes(kw)).length;
+  if (tamilRomanCount >= 2) return "ta";
+
+  return "en";
+}
+
+function getLanguageSystemPromptAddition(lang: "en" | "ms" | "ta"): string {
+  switch (lang) {
+    case "ms":
+      return "\n\nLANGUAGE: Respond in Bahasa Melayu or Manglish. Be warm and use local expressions like 'lah', 'kan'. If the user writes in Malay, always reply in Malay.";
+    case "ta":
+      return "\n\nLANGUAGE: Respond in Tamil script or Tanglish (romanized Tamil). Use culturally appropriate references. If the user writes in Tamil, always reply in Tamil.";
+    default:
+      return "";
+  }
+}
+
+// ============================================================
+// SEA-LION REGIONAL MODEL - Malay & Tamil (tools + chat)
+// ============================================================
+
+async function callSeaLionWithTools(
+  systemPrompt: string,
+  userMessage: string,
+  conversationHistory: any[],
+  tools: any[],
+  toolChoiceMode: "auto" | "required" = "auto"
+): Promise<{ content: string | null; toolCalls: any[] | null }> {
+  const SEALION_API_KEY = Deno.env.get("SEALION_API_KEY");
+  if (!SEALION_API_KEY) {
+    console.warn("[SEA-LION] SEALION_API_KEY not set");
+    return { content: null, toolCalls: null };
+  }
+
+  try {
+    const messages: any[] = [
+      { role: "system", content: systemPrompt },
+      ...conversationHistory.slice(-10).map((msg: any) => ({
+        role: msg.role === "user" ? "user" : "assistant",
+        content: typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content)
+      })),
+      { role: "user", content: userMessage }
+    ];
+
+    const body: any = {
+      model: "aisingapore/Gemma-SEA-LION-v4-27B-IT",
+      messages,
+      max_tokens: 500,
+      temperature: 0.7,
+    };
+
+    if (tools.length > 0) {
+      body.tools = tools;
+      body.tool_choice = toolChoiceMode;
+    }
+
+    const response = await fetch("https://api.sea-lion.ai/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${SEALION_API_KEY}`,
+      },
+      body: JSON.stringify(body),
+    });
+
+    if (!response.ok) {
+      const errText = await response.text().catch(() => "");
+      console.error(`[SEA-LION] Error ${response.status}: ${errText}`);
+      return { content: null, toolCalls: null };
+    }
+
+    const data = await response.json();
+    const choice = data.choices?.[0]?.message;
+    return {
+      content: choice?.content || null,
+      toolCalls: choice?.tool_calls || null
+    };
+  } catch (error) {
+    console.error("[SEA-LION] Failed:", error);
+    return { content: null, toolCalls: null };
+  }
+}
+
+async function callSeaLionChat(
+  systemPrompt: string,
+  message: string,
+  conversationHistory: any[]
+): Promise<string | null> {
+  const result = await callSeaLionWithTools(systemPrompt, message, conversationHistory, []);
+  return result.content;
+}
+
+// ============================================================
+// SARVAM-M - Tamil Deep Reasoning (chat only, Thinking Mode)
+// ============================================================
+
+async function callSarvamChat(
+  systemPrompt: string,
+  message: string,
+  conversationHistory: any[]
+): Promise<string | null> {
+  const SARVAM_API_KEY = Deno.env.get("SARVAM_API_KEY");
+  if (!SARVAM_API_KEY) {
+    console.warn("[Sarvam] SARVAM_API_KEY not set");
+    return null;
+  }
+
+  try {
+    const messages = [
+      { role: "system", content: systemPrompt },
+      ...conversationHistory.slice(-10).map((msg: any) => ({
+        role: msg.role === "user" ? "user" : "assistant",
+        content: typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content)
+      })),
+      { role: "user", content: message }
+    ];
+
+    const response = await fetch("https://api.sarvam.ai/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "api-subscription-key": SARVAM_API_KEY,
+      },
+      body: JSON.stringify({
+        model: "sarvam-m",
+        messages,
+        max_tokens: 500,
+        temperature: 0.7,
+        reasoning_effort: "medium",
+      }),
+    });
+
+    if (!response.ok) {
+      const errText = await response.text().catch(() => "");
+      console.error(`[Sarvam] Error ${response.status}: ${errText}`);
+      return null;
+    }
+
+    const data = await response.json();
+    return data.choices?.[0]?.message?.content || null;
+  } catch (error) {
+    console.error("[Sarvam] Failed:", error);
+    return null;
+  }
+}
+
 function detectCrisis(message: string): { isCrisis: boolean; matchedKeywords: string[] } {
   const lowerMessage = message.toLowerCase();
   const matchedKeywords = CRISIS_KEYWORDS.filter(keyword => lowerMessage.includes(keyword));
@@ -1071,7 +1239,7 @@ serve(async (req) => {
       });
     }
 
-    const { message, conversationHistory } = await req.json();
+    const { message, conversationHistory, preferred_language } = await req.json();
     
     const sanitizedMessage = sanitizeInput(message, 2000);
     if (!sanitizedMessage) {
@@ -1092,9 +1260,13 @@ serve(async (req) => {
     // Get user profile for system prompt
     const { data: profile } = await supabase
       .from("profiles")
-      .select("pseudonym, addiction_type, sobriety_start_date, level")
+      .select("pseudonym, addiction_type, sobriety_start_date, level, preferred_language")
       .eq("id", user.id)
       .single();
+
+    // Detect language
+    const detectedLanguage = detectLanguage(sanitizedMessage, preferred_language || profile?.preferred_language);
+    console.log(`[Agent] Detected language: ${detectedLanguage}`);
 
     const daysSober = profile?.sobriety_start_date
       ? Math.floor((Date.now() - new Date(profile.sobriety_start_date).getTime()) / (1000 * 60 * 60 * 24))
@@ -1123,7 +1295,7 @@ CORE RULES:
 7. ${crisisCheck.isCrisis ? 'CRISIS DETECTED: Call escalate_crisis immediately and share 988 hotline.' : 'If user mentions suicide or self-harm, call escalate_crisis immediately.'}
 8. NEVER output internal tool names, reasoning traces, or raw function names in your response.
 
-IMPORTANT: After calling any tool, provide a helpful text response that describes or confirms the data. Use ONLY real data from tool results.`;
+IMPORTANT: After calling any tool, provide a helpful text response that describes or confirms the data. Use ONLY real data from tool results.` + getLanguageSystemPromptAddition(detectedLanguage);
 
     // ---- STEP 2: Route to appropriate agent ----
 

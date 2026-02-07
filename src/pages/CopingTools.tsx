@@ -6,8 +6,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Heart, Wind, Footprints, Phone, Music, Book, Play, StopCircle, ChevronLeft, ChevronRight } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { PageHeader } from "@/components/layout/PageHeader";
+import { useLanguage } from "@/contexts/LanguageContext";
 
 const CopingTools = () => {
+  const { t } = useLanguage();
   const [breathingActive, setBreathingActive] = useState(false);
   const [breathingPhase, setBreathingPhase] = useState<"inhale" | "hold1" | "exhale" | "hold2">("inhale");
   const [breathingLevel, setBreathingLevel] = useState(4);
@@ -20,20 +22,20 @@ const CopingTools = () => {
   const isActiveRef = useRef<boolean>(false);
 
   const tools = [
-    { title: "Breathing Exercise", description: "Box breathing for instant calm", icon: Wind, color: "bg-primary" },
-    { title: "Take a Walk", description: "5-minute walk to clear your mind", icon: Footprints, color: "bg-success" },
-    { title: "Call Someone", description: "Reach out to a friend", icon: Phone, color: "bg-accent" },
-    { title: "Listen to Music", description: "Calming music", icon: Music, color: "bg-warning" },
-    { title: "Read Affirmations", description: "Remind yourself of your strength", icon: Book, color: "bg-purple-500" },
+    { title: t("coping.breathing"), description: t("coping.breathingDesc"), icon: Wind, color: "bg-primary" },
+    { title: t("coping.walk"), description: t("coping.walkDesc"), icon: Footprints, color: "bg-success" },
+    { title: t("coping.call"), description: t("coping.callDesc"), icon: Phone, color: "bg-accent" },
+    { title: t("coping.music"), description: t("coping.musicDesc"), icon: Music, color: "bg-warning" },
+    { title: t("coping.read"), description: t("coping.readDesc"), icon: Book, color: "bg-purple-500" },
   ];
 
   const affirmations = [
-    "I am stronger than my urges.",
-    "This feeling will pass.",
-    "I choose my recovery every day.",
-    "I am proud of my progress.",
-    "I deserve a healthy, sober life.",
-    "Each day sober is a victory.",
+    t("coping.affirmation1"),
+    t("coping.affirmation2"),
+    t("coping.affirmation3"),
+    t("coping.affirmation4"),
+    t("coping.affirmation5"),
+    t("coping.affirmation6"),
   ];
 
   const totalCycles = Math.max(1, Math.floor((sessionDuration * 60) / (breathingLevel * 4)));
@@ -148,12 +150,12 @@ const CopingTools = () => {
 
   return (
     <div className="min-h-screen bg-gradient-calm">
-      <PageHeader title="Coping" />
+      <PageHeader title={t("coping.title")} />
 
       <main className="container mx-auto px-4 py-8 max-w-6xl animate-fade-in space-y-6">
         <div className="hidden md:block">
-          <h1 className="text-3xl font-bold mb-2">Coping Tools</h1>
-          <p className="text-muted-foreground">Techniques to manage urges and stress</p>
+          <h1 className="text-3xl font-bold mb-2">{t("coping.fullTitle")}</h1>
+          <p className="text-muted-foreground">{t("coping.subtitle")}</p>
         </div>
 
         {/* Box Breathing Exercise */}
@@ -161,9 +163,9 @@ const CopingTools = () => {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Wind className="h-5 w-5" />
-              Box Breathing Exercise
+              {t("coping.boxBreathing")}
             </CardTitle>
-            <CardDescription>Guided breathing to reduce stress instantly</CardDescription>
+            <CardDescription>{t("coping.boxBreathingDesc")}</CardDescription>
           </CardHeader>
           <CardContent>
             {!breathingActive ? (
@@ -275,8 +277,8 @@ const CopingTools = () => {
         {/* Daily Affirmations */}
         <Card className="bg-gradient-primary text-primary-foreground">
           <CardHeader>
-            <CardTitle>Daily Affirmations</CardTitle>
-            <CardDescription className="text-primary-foreground/80">Positive reminders for your journey</CardDescription>
+            <CardTitle>{t("coping.dailyAffirmations")}</CardTitle>
+            <CardDescription className="text-primary-foreground/80">{t("coping.affirmationsSubtitle")}</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="grid md:grid-cols-2 gap-3">
