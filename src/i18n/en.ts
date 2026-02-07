@@ -275,6 +275,7 @@ export const en = {
   "onboarding.addiction.other": "Other",
 
   // Common
+  "common.back": "Back",
   "common.save": "Save",
   "common.cancel": "Cancel",
   "common.delete": "Delete",

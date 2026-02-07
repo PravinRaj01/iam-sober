@@ -277,6 +277,7 @@ export const ms: Record<TranslationKey, string> = {
   "onboarding.addiction.other": "Lain-lain",
 
   // Common
+  "common.back": "Kembali",
   "common.save": "Simpan",
   "common.cancel": "Batal",
   "common.delete": "Padam",

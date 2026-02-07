@@ -72,7 +72,6 @@ const Progress = () => {
     },
   });
 
-  // Fetch all relapses for the dialog with pagination
   const { data: allRelapses } = useQuery({
     queryKey: ["progress-all-relapses"],
     queryFn: async () => {
@@ -90,7 +89,6 @@ const Progress = () => {
     },
   });
 
-  // Get latest relapse for summary view
   const latestRelapse = allRelapses?.[0];
   const totalRelapses = allRelapses?.length || 0;
   const totalRelapsePages = Math.ceil(totalRelapses / RELAPSES_PER_PAGE);
@@ -99,7 +97,6 @@ const Progress = () => {
     relapseCurrentPage * RELAPSES_PER_PAGE
   ) || [];
 
-  // Calendar heatmap
   const monthDays = eachDayOfInterval({
     start: startOfMonth(currentMonth),
     end: endOfMonth(currentMonth),
@@ -163,10 +160,7 @@ const Progress = () => {
           <p className="text-muted-foreground">{t("progress.subtitle")}</p>
         </div>
 
-        {/* Advanced Insights */}
         <ProgressCharts />
-        
-        {/* Biometric Trends */}
         <BiometricTrendsChart />
 
         {/* Stats Overview */}
@@ -175,12 +169,12 @@ const Progress = () => {
             <CardHeader className="pb-3">
               <CardTitle className="text-sm font-medium flex items-center gap-2">
                 <Heart className="h-4 w-4 text-success" />
-                Check-ins This Week
+                {t("progress.checkInsWeek")}
               </CardTitle>
             </CardHeader>
             <CardContent>
               <div className="text-3xl font-bold">{weeklyCheckIns}</div>
-              <p className="text-xs text-muted-foreground mt-1">Keep tracking your mood</p>
+              <p className="text-xs text-muted-foreground mt-1">{t("progress.keepTracking")}</p>
             </CardContent>
           </Card>
 
@@ -188,14 +182,14 @@ const Progress = () => {
             <CardHeader className="pb-3">
               <CardTitle className="text-sm font-medium flex items-center gap-2">
                 <Target className="h-4 w-4 text-primary" />
-                Goals Progress
+                {t("progress.goalsProgress")}
               </CardTitle>
             </CardHeader>
             <CardContent>
               <div className="text-3xl font-bold">
                 {completedGoals}/{totalGoals}
               </div>
-              <p className="text-xs text-muted-foreground mt-1">Goals completed</p>
+              <p className="text-xs text-muted-foreground mt-1">{t("progress.goalsCompleted")}</p>
             </CardContent>
           </Card>
 
@@ -203,27 +197,27 @@ const Progress = () => {
             <CardHeader className="pb-3">
               <CardTitle className="text-sm font-medium flex items-center gap-2">
                 <BookOpen className="h-4 w-4 text-accent" />
-                Journal Entries
+                {t("progress.journalEntries")}
               </CardTitle>
             </CardHeader>
             <CardContent>
               <div className="text-3xl font-bold">{journalEntries?.length || 0}</div>
-              <p className="text-xs text-muted-foreground mt-1">Recent entries</p>
+              <p className="text-xs text-muted-foreground mt-1">{t("progress.recentEntries")}</p>
             </CardContent>
           </Card>
         </div>
 
-        {/* Interactive Check-in Calendar Heatmap */}
+        {/* Interactive Calendar */}
         <Card className="bg-card/50 backdrop-blur-lg border-border/50">
           <CardHeader className="space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
               <div className="flex-1 min-w-0">
                 <CardTitle className="flex items-center gap-2">
                   <CalendarIcon className="h-5 w-5" />
-                  Interactive Calendar
+                  {t("progress.calendar")}
                 </CardTitle>
                 <CardDescription className="mt-1">
-                  Click on any day to see details. Green = Check-in, Red = Relapse, Blue border = Active goal
+                  {t("progress.calendarDesc")}
                 </CardDescription>
               </div>
               <div className="flex items-center gap-2 shrink-0">
@@ -284,9 +278,9 @@ const Progress = () => {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <AlertCircle className="h-5 w-5 text-destructive" />
-                Latest Relapse
+                {t("progress.latestRelapse")}
               </CardTitle>
-              <CardDescription>Learning from setbacks</CardDescription>
+              <CardDescription>{t("progress.learningFromSetbacks")}</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="p-3 bg-destructive/5 border border-destructive/20 rounded-lg">
@@ -318,7 +312,7 @@ const Progress = () => {
                     setRelapseDialogOpen(true);
                   }}
                 >
-                  See All Relapses ({totalRelapses})
+                  {t("progress.seeAllRelapses")} ({totalRelapses})
                 </Button>
               )}
             </CardContent>
@@ -331,7 +325,7 @@ const Progress = () => {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <BookOpen className="h-5 w-5" />
-                Recent Journal Entries
+                {t("progress.recentJournal")}
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -371,15 +365,14 @@ const Progress = () => {
             return (
               <div className="space-y-4 max-h-[60vh] overflow-y-auto">
                 {!hasActivity && (
-                  <p className="text-muted-foreground text-center py-8">No activity recorded for this day</p>
+                  <p className="text-muted-foreground text-center py-8">{t("progress.noActivity")}</p>
                 )}
 
-                {/* Check-ins */}
                 {dayCheckIns && dayCheckIns.length > 0 && (
                   <div className="space-y-2">
                     <h3 className="font-semibold flex items-center gap-2">
                       <CheckCircle2 className="h-4 w-4 text-success" />
-                      Check-ins ({dayCheckIns.length})
+                      {t("checkIn.title")} ({dayCheckIns.length})
                     </h3>
                     {dayCheckIns.map((checkIn) => (
                       <Card key={checkIn.id} className="bg-success/5 border-success/20">
@@ -397,12 +390,11 @@ const Progress = () => {
                   </div>
                 )}
 
-                {/* Journal Entries */}
                 {dayJournal && dayJournal.length > 0 && (
                   <div className="space-y-2">
                     <h3 className="font-semibold flex items-center gap-2">
                       <BookOpen className="h-4 w-4 text-accent" />
-                      Journal Entries ({dayJournal.length})
+                      {t("journal.title")} ({dayJournal.length})
                     </h3>
                     {dayJournal.map((entry) => (
                       <Card key={entry.id} className="bg-accent/5 border-accent/20">
@@ -415,12 +407,11 @@ const Progress = () => {
                   </div>
                 )}
 
-                {/* Relapses */}
                 {dayRelapses && dayRelapses.length > 0 && (
                   <div className="space-y-2">
                     <h3 className="font-semibold flex items-center gap-2">
                       <AlertCircle className="h-4 w-4 text-destructive" />
-                      Relapses ({dayRelapses.length})
+                      {t("progress.latestRelapse")} ({dayRelapses.length})
                     </h3>
                     {dayRelapses.map((relapse) => (
                       <Card key={relapse.id} className="bg-destructive/5 border-destructive/20">
@@ -441,12 +432,11 @@ const Progress = () => {
                   </div>
                 )}
 
-                {/* Active Goals */}
                 {dayGoals && dayGoals.length > 0 && (
                   <div className="space-y-2">
                     <h3 className="font-semibold flex items-center gap-2">
                       <Target className="h-4 w-4 text-primary" />
-                      Active Goals ({dayGoals.length})
+                      {t("goals.title")} ({dayGoals.length})
                     </h3>
                     {dayGoals.map((goal) => (
                       <Card key={goal.id} className="bg-primary/5 border-primary/20">
@@ -456,7 +446,7 @@ const Progress = () => {
                             <p className="text-sm text-muted-foreground mt-1">{goal.description}</p>
                           )}
                           <Badge className="mt-2" variant={goal.completed ? "default" : "outline"}>
-                            {goal.completed ? "Completed" : "In Progress"}
+                            {goal.completed ? t("goals.completed") : t("goals.active")}
                           </Badge>
                         </CardContent>
                       </Card>
@@ -475,7 +465,7 @@ const Progress = () => {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <AlertCircle className="h-5 w-5 text-destructive" />
-              Relapse History
+              {t("progress.seeAllRelapses")}
             </DialogTitle>
           </DialogHeader>
           
@@ -511,10 +501,10 @@ const Progress = () => {
                 disabled={relapseCurrentPage === 1}
               >
                 <ChevronLeft className="h-4 w-4 mr-1" />
-                Previous
+                {t("common.back")}
               </Button>
               <span className="text-sm text-muted-foreground">
-                Page {relapseCurrentPage} of {totalRelapsePages}
+                {relapseCurrentPage} / {totalRelapsePages}
               </span>
               <Button
                 variant="outline"
