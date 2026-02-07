@@ -168,10 +168,10 @@ const actionToolDeclarations = [
       required: ["activity_name", "category"]
     }
   },
-  // --- NEW: Edit/Delete tools ---
+  // --- Edit/Delete tools (CONFIRMATION REQUIRED) ---
   {
     name: "edit_journal_entry",
-    description: "Edit an existing journal entry by matching its title. Use this when the user wants to update or modify an existing journal entry.",
+    description: "Edit an existing journal entry by matching its title. CRITICAL: Do NOT call this tool until the user has explicitly told you WHAT to change (new title or new content). If they just say 'edit' or 'change', you MUST ask them what the new content or title should be FIRST. NEVER invent or assume new content.",
     parameters: {
       type: "object",
       properties: {
@@ -184,7 +184,7 @@ const actionToolDeclarations = [
   },
   {
     name: "delete_journal_entry",
-    description: "Delete a journal entry by matching its title. Use this when the user wants to remove a journal entry.",
+    description: "Delete a journal entry by matching its title. CRITICAL: Do NOT call this tool until the user has explicitly CONFIRMED deletion. First tell the user which entry will be deleted and ask 'Are you sure you want to delete this?'. Only call this tool AFTER the user confirms with yes/sure/confirm/do it.",
     parameters: {
       type: "object",
       properties: {
@@ -195,7 +195,7 @@ const actionToolDeclarations = [
   },
   {
     name: "update_goal",
-    description: "Update an existing goal's title, description, or target days. Use this when the user wants to modify a goal.",
+    description: "Update an existing goal's title, description, or target days. CRITICAL: Do NOT call this tool until the user has explicitly told you WHAT to change. If they just say 'update' or 'edit my goal', you MUST ask what they want to change FIRST. NEVER invent or assume new values.",
     parameters: {
       type: "object",
       properties: {
@@ -209,7 +209,7 @@ const actionToolDeclarations = [
   },
   {
     name: "delete_goal",
-    description: "Delete a goal by matching its title. Use this when the user wants to remove a goal.",
+    description: "Delete a goal by matching its title. CRITICAL: Do NOT call this tool until the user has explicitly CONFIRMED deletion. First tell the user which goal will be deleted and ask 'Are you sure?'. Only call this tool AFTER the user confirms with yes/sure/confirm/do it.",
     parameters: {
       type: "object",
       properties: {
@@ -1110,11 +1110,18 @@ CORE RULES:
    - ALWAYS ask the user for details FIRST before creating anything
    - NEVER create duplicates
    - Only call create_* tools when user explicitly provides NEW content to add
-5. For EDIT/DELETE tools (edit_journal_entry, update_goal, delete_journal_entry, delete_goal):
-   - Use these when the user wants to modify or remove existing entries
-   - Confirm the action with the user after completion
-6. ${crisisCheck.isCrisis ? 'CRISIS DETECTED: Call escalate_crisis immediately and share 988 hotline.' : 'If user mentions suicide or self-harm, call escalate_crisis immediately.'}
-7. NEVER output internal tool names, reasoning traces, or raw function names in your response.
+5. For EDIT tools (edit_journal_entry, update_goal):
+   - ALWAYS ask "What would you like to change it to?" BEFORE calling the tool
+   - NEVER invent or assume new content - the user MUST provide the new text
+   - If user says "edit my entry" without specifying changes, ASK what they want to change
+   - Do NOT call the edit tool until you have the user's explicit new content
+6. For DELETE tools (delete_journal_entry, delete_goal):
+   - If the user says "delete an entry" without specifying WHICH one, list the entries and ask which one to delete
+   - ALWAYS confirm by saying "Are you sure you want to delete [title]?" BEFORE calling the delete tool
+   - Only call the delete tool AFTER the user explicitly confirms (says yes/confirm/sure/do it/go ahead)
+   - NEVER delete without asking for confirmation first
+7. ${crisisCheck.isCrisis ? 'CRISIS DETECTED: Call escalate_crisis immediately and share 988 hotline.' : 'If user mentions suicide or self-harm, call escalate_crisis immediately.'}
+8. NEVER output internal tool names, reasoning traces, or raw function names in your response.
 
 IMPORTANT: After calling any tool, provide a helpful text response that describes or confirms the data. Use ONLY real data from tool results.`;
 
