@@ -271,6 +271,21 @@ const dataToolDeclarations = [
     description: "Get summaries of past conversations to maintain continuity. Call this when the user references past discussions or you need context about previous interactions.",
     parameters: { type: "object", properties: {}, required: [] }
   },
+  {
+    name: "analyze_mood_trend",
+    description: "Analyze user's mood history over 14-30 days to predict risk windows and detect patterns. Call this when user asks about mood trends, risk prediction, or pattern analysis.",
+    parameters: { type: "object", properties: { days: { type: "number", description: "Number of days to analyze (default 14, max 30)" } }, required: [] }
+  },
+  {
+    name: "fetch_wearable_insights",
+    description: "Correlate biometric data (sleep, steps, stress, heart rate) with mood data to generate holistic health-recovery insights. Call when user asks about health correlations or wearable insights.",
+    parameters: { type: "object", properties: {}, required: [] }
+  },
+  {
+    name: "summarize_weekly_progress",
+    description: "Generate a narrative summary of the user's week including check-ins, goals, journal entries, and streaks. Call when user asks for a weekly summary or progress report.",
+    parameters: { type: "object", properties: {}, required: [] }
+  },
 ];
 
 const actionToolDeclarations = [
@@ -386,6 +401,16 @@ const actionToolDeclarations = [
       required: ["goal_title"]
     }
   },
+  {
+    name: "schedule_reminder",
+    description: "Create a custom reminder or suggestion for the user. Call when user wants to set a reminder or schedule something.",
+    parameters: { type: "object", properties: { title: { type: "string", description: "Reminder title" }, message: { type: "string", description: "Reminder message" }, suggested_time: { type: "string", description: "Suggested time (e.g., 'morning', 'evening')" } }, required: ["title", "message"] }
+  },
+  {
+    name: "generate_relapse_prevention_plan",
+    description: "Build a personalized relapse prevention plan based on user's trigger history, past relapses, and successful coping activities. Call when user asks for a prevention plan.",
+    parameters: { type: "object", properties: { focus_area: { type: "string", description: "Specific trigger or situation to focus on (optional)" } }, required: [] }
+  },
 ];
 
 const supportToolDeclarations = [
@@ -437,7 +462,17 @@ const supportToolDeclarations = [
       },
       required: ["intervention_type"]
     }
-  }
+  },
+  {
+    name: "get_community_support_matches",
+    description: "Find community members with similar recovery journeys for peer support. Call when user wants to find support buddies or mentors.",
+    parameters: { type: "object", properties: {}, required: [] }
+  },
+  {
+    name: "translate_response",
+    description: "Signal that the response should be translated to the user's preferred language. Use when language switching is needed mid-conversation.",
+    parameters: { type: "object", properties: { target_language: { type: "string", enum: ["en", "ms", "ta"], description: "Target language code" }, text: { type: "string", description: "Text to contextualize" } }, required: ["target_language"] }
+  },
 ];
 
 // Build Gemini-format tool groups
@@ -499,9 +534,9 @@ async function classifyIntent(message: string, crisisDetected: boolean): Promise
             content: `Classify the user message into exactly ONE category. Respond with ONLY the category word, nothing else.
 
 Categories:
-- data: User asks about their progress, stats, moods, goals, journals, biometrics, history, or wants to LIST/VIEW/CHECK existing entries
-- action: User wants to create, update, edit, delete, complete, or log something (goals, check-ins, journal entries, coping activities)
-- support: User is struggling emotionally, needs coping strategies, is in crisis, or needs an action plan
+- data: User asks about their progress, stats, moods, goals, journals, biometrics, history, mood trends, weekly summary, wearable insights, or wants to LIST/VIEW/CHECK/ANALYZE existing entries
+- action: User wants to create, update, edit, delete, complete, log, schedule, or plan something (goals, check-ins, journal entries, coping activities, reminders, prevention plans)
+- support: User is struggling emotionally, needs coping strategies, is in crisis, needs an action plan, wants peer support, or needs community connections
 - chat: General conversation, greetings, motivation, questions about recovery, or anything not fitting above categories`
           },
           { role: "user", content: message }
@@ -1167,6 +1202,110 @@ async function executeTool(supabase: any, userId: string, toolName: string, args
       return { success: true, message: `🗑️ Goal "${match.title}" has been deleted.` };
     }
     
+    case "analyze_mood_trend": {
+      const days = args.days || 14;
+      const sinceDate = new Date();
+      sinceDate.setDate(sinceDate.getDate() - Math.min(days, 30));
+      const { data: checkIns } = await supabase.from("check_ins").select("mood, urge_intensity, created_at").eq("user_id", userId).gte("created_at", sinceDate.toISOString()).order("created_at", { ascending: true });
+      if (!checkIns || checkIns.length < 3) return { has_data: false, message: "Not enough check-in data for trend analysis. Keep logging daily!" };
+      const moodScores: Record<string, number> = { great: 5, good: 4, okay: 3, struggling: 2, crisis: 1 };
+      const dayMap: Record<string, { scores: number[]; urges: number[] }> = {};
+      for (const ci of checkIns) {
+        const day = new Date(ci.created_at).toLocaleDateString("en-US", { weekday: "long" });
+        if (!dayMap[day]) dayMap[day] = { scores: [], urges: [] };
+        dayMap[day].scores.push(moodScores[ci.mood] || 3);
+        dayMap[day].urges.push(ci.urge_intensity || 0);
+      }
+      const dayRisks = Object.entries(dayMap).map(([day, data]) => ({
+        day, avgMood: (data.scores.reduce((a, b) => a + b, 0) / data.scores.length).toFixed(1),
+        avgUrge: (data.urges.reduce((a, b) => a + b, 0) / data.urges.length).toFixed(1),
+      })).sort((a, b) => Number(a.avgMood) - Number(b.avgMood));
+      const recentScores = checkIns.slice(-7).map(ci => moodScores[ci.mood] || 3);
+      const olderScores = checkIns.slice(0, 7).map(ci => moodScores[ci.mood] || 3);
+      const recentAvg = recentScores.reduce((a, b) => a + b, 0) / recentScores.length;
+      const olderAvg = olderScores.length > 0 ? olderScores.reduce((a, b) => a + b, 0) / olderScores.length : recentAvg;
+      const trend = recentAvg > olderAvg + 0.3 ? "improving" : recentAvg < olderAvg - 0.3 ? "declining" : "stable";
+      return { has_data: true, period_days: days, total_check_ins: checkIns.length, overall_trend: trend, highest_risk_days: dayRisks.slice(0, 2).map(d => d.day), day_breakdown: dayRisks, recent_avg_mood: recentAvg.toFixed(1), prediction: trend === "declining" ? "⚠️ Mood trending down. Consider extra self-care." : trend === "improving" ? "📈 Great progress! Mood improving." : "➡️ Mood stable. Consistency is key." };
+    }
+
+    case "fetch_wearable_insights": {
+      const weekAgo = new Date(); weekAgo.setDate(weekAgo.getDate() - 7);
+      const [biometricsRes, checkInsRes] = await Promise.all([
+        supabase.from("biometric_logs").select("sleep_hours, steps, stress_level, heart_rate, logged_at").eq("user_id", userId).gte("logged_at", weekAgo.toISOString()),
+        supabase.from("check_ins").select("mood, urge_intensity, created_at").eq("user_id", userId).gte("created_at", weekAgo.toISOString())
+      ]);
+      const biometrics = biometricsRes.data || []; const checkIns = checkInsRes.data || [];
+      if (biometrics.length === 0) return { has_data: false, message: "No wearable data available. Connect a device to get health-recovery insights." };
+      const moodScores: Record<string, number> = { great: 5, good: 4, okay: 3, struggling: 2, crisis: 1 };
+      const avgSleep = biometrics.reduce((s: number, b: any) => s + (b.sleep_hours || 0), 0) / biometrics.length;
+      const avgStress = biometrics.reduce((s: number, b: any) => s + (b.stress_level || 0), 0) / biometrics.length;
+      const avgSteps = biometrics.reduce((s: number, b: any) => s + (b.steps || 0), 0) / biometrics.length;
+      const avgMood = checkIns.length > 0 ? checkIns.reduce((s: number, c: any) => s + (moodScores[c.mood] || 3), 0) / checkIns.length : null;
+      const insights: string[] = [];
+      if (avgSleep < 6 && avgMood && avgMood < 3.5) insights.push("💤 Low sleep correlates with lower mood. Prioritizing rest could improve recovery.");
+      if (avgStress > 6 && checkIns.some((c: any) => (c.urge_intensity || 0) > 5)) insights.push("😤 High stress aligns with stronger urges. Try stress-reduction techniques.");
+      if (avgSteps > 5000 && avgMood && avgMood > 3.5) insights.push("🏃 Active days show better mood! Keep moving.");
+      if (insights.length === 0) insights.push("✨ Health metrics and mood are well-balanced.");
+      return { has_data: true, avg_sleep: avgSleep.toFixed(1), avg_stress: avgStress.toFixed(1), avg_steps: Math.round(avgSteps), avg_mood: avgMood?.toFixed(1) || "N/A", correlations: insights };
+    }
+
+    case "summarize_weekly_progress": {
+      const weekAgo = new Date(); weekAgo.setDate(weekAgo.getDate() - 7);
+      const [checkInsRes, goalsRes, journalsRes, profileRes] = await Promise.all([
+        supabase.from("check_ins").select("mood, created_at").eq("user_id", userId).gte("created_at", weekAgo.toISOString()),
+        supabase.from("goals").select("title, completed, created_at").eq("user_id", userId),
+        supabase.from("journal_entries").select("title, created_at").eq("user_id", userId).gte("created_at", weekAgo.toISOString()),
+        supabase.from("profiles").select("current_streak, sobriety_start_date, level, xp").eq("id", userId).single()
+      ]);
+      const checkIns = checkInsRes.data || []; const goals = goalsRes.data || []; const journals = journalsRes.data || []; const prof = profileRes.data;
+      const daysSober = prof?.sobriety_start_date ? Math.floor((Date.now() - new Date(prof.sobriety_start_date).getTime()) / (1000 * 60 * 60 * 24)) : 0;
+      const completedThisWeek = goals.filter((g: any) => g.completed && new Date(g.created_at) >= weekAgo).length;
+      return { week_summary: { check_ins_logged: checkIns.length, journal_entries_written: journals.length, active_goals: goals.filter((g: any) => !g.completed).length, goals_completed_this_week: completedThisWeek, current_streak: prof?.current_streak || 0, days_sober: daysSober, level: prof?.level || 1, xp: prof?.xp || 0 }, highlights: checkIns.length >= 5 ? "🌟 Great consistency with check-ins!" : checkIns.length >= 3 ? "👍 Good check-in frequency" : "📝 Try to check in more often" };
+    }
+
+    case "schedule_reminder": {
+      return { success: true, reminder: { title: args.title, message: args.message, suggested_time: args.suggested_time || "morning" }, note: `📝 Reminder noted: "${args.title}" - ${args.message}. Suggested time: ${args.suggested_time || "morning"}.` };
+    }
+
+    case "generate_relapse_prevention_plan": {
+      const [triggersRes, relapsesRes, copingRes] = await Promise.all([
+        supabase.from("triggers").select("trigger_type, intensity, situation").eq("user_id", userId).order("created_at", { ascending: false }).limit(20),
+        supabase.from("relapses").select("triggers, notes, relapse_date").eq("user_id", userId).order("relapse_date", { ascending: false }).limit(10),
+        supabase.from("coping_activities").select("activity_name, category, helpful, times_used").eq("user_id", userId).eq("helpful", true).order("times_used", { ascending: false }).limit(10)
+      ]);
+      const triggers = triggersRes.data || []; const relapses = relapsesRes.data || []; const copingActivities = copingRes.data || [];
+      const topTriggers = triggers.slice(0, 5).map((t: any) => t.trigger_type);
+      const effectiveCoping = copingActivities.slice(0, 5).map((c: any) => c.activity_name);
+      const relapsePatterns = relapses.map((r: any) => r.triggers || []).flat();
+      const plan: any = {
+        identified_triggers: topTriggers.length > 0 ? topTriggers : ["No triggers recorded yet"],
+        relapse_patterns: relapsePatterns.length > 0 ? [...new Set(relapsePatterns)].slice(0, 5) : ["No relapse data - keep going!"],
+        proven_coping_strategies: effectiveCoping.length > 0 ? effectiveCoping : ["Breathing exercises", "Physical activity", "Journaling"],
+        prevention_steps: ["1. Identify early warning signs", "2. Use proven coping strategies immediately", "3. Reach out to support", "4. Remove yourself from triggering environments", "5. Practice self-compassion"],
+        emergency_contacts: { crisis_line: "988 (Suicide & Crisis Lifeline)", text_line: "Text HOME to 741741" }
+      };
+      if (args.focus_area) plan.prevention_steps.unshift(`0. For "${args.focus_area}": Plan specific avoidance strategies`);
+      return plan;
+    }
+
+    case "get_community_support_matches": {
+      const { data: userProfile } = await supabase.from("profiles").select("level, addiction_type, current_streak").eq("id", userId).single();
+      const { data: matches } = await supabase.from("profiles").select("id, pseudonym, level, current_streak, addiction_type").neq("id", userId).not("pseudonym", "is", null).order("current_streak", { ascending: false }).limit(10);
+      if (!matches || matches.length === 0) return { matches: [], message: "No community members found yet." };
+      const scored = matches.map((m: any) => {
+        let score = 0;
+        if (m.addiction_type === userProfile?.addiction_type) score += 3;
+        if (Math.abs((m.level || 1) - (userProfile?.level || 1)) <= 2) score += 2;
+        if (Math.abs((m.current_streak || 0) - (userProfile?.current_streak || 0)) <= 14) score += 1;
+        return { ...m, similarity_score: score };
+      }).sort((a: any, b: any) => b.similarity_score - a.similarity_score).slice(0, 5);
+      return { matches: scored.map((m: any) => ({ pseudonym: m.pseudonym, level: m.level, streak: m.current_streak, same_recovery_type: m.addiction_type === userProfile?.addiction_type })), message: `Found ${scored.length} community members on similar journeys!` };
+    }
+
+    case "translate_response": {
+      return { target_language: args.target_language, instruction: `Respond in ${args.target_language === "ms" ? "Bahasa Melayu" : args.target_language === "ta" ? "Tamil" : "English"}.`, text_context: args.text || "" };
+    }
+
     default:
       return { error: `Unknown tool: ${toolName}` };
   }
@@ -1272,7 +1411,9 @@ serve(async (req) => {
       ? Math.floor((Date.now() - new Date(profile.sobriety_start_date).getTime()) / (1000 * 60 * 60 * 24))
       : 0;
 
-    const systemPrompt = `You are a compassionate AI Recovery Coach for ${profile?.pseudonym || "a user"} who is ${daysSober} days sober (Level ${profile?.level || 1}).
+    const systemPrompt = `You are a compassionate AI Recovery Coach for ${profile?.pseudonym || "a user"} who is ${daysSober} days free from ${profile?.addiction_type || "addiction"} (Level ${profile?.level || 1}).
+
+CRITICAL CONTEXT: The user is recovering from "${profile?.addiction_type || "addiction"}". NEVER reference alcohol, drinking, or "minum" unless their addiction type is specifically "alcohol". Always use language and examples appropriate to their specific recovery type.
 
 CORE RULES:
 1. Be warm, supportive, and practical. Keep responses under 150 words.
@@ -1299,42 +1440,40 @@ IMPORTANT: After calling any tool, provide a helpful text response that describe
 
     // ---- STEP 2: Route to appropriate agent ----
 
-    // === CHAT PATH: Cerebras (fast, no tools) ===
+    // === CHAT PATH: Language-aware routing ===
     if (routerCategory === "chat") {
-      console.log("[Agent] Chat path -> Cerebras");
-      modelUsed = "cerebras-llama3.3-70b";
-      
-      const chatResponse = await callCerebrasChat(
-        systemPrompt,
-        sanitizedMessage,
-        conversationHistory || []
-      );
+      let finalContent: string | null = null;
 
-      let finalContent = chatResponse;
-      
-      // Fallback to Groq text-only if Cerebras fails
-      if (!finalContent) {
-        console.log("[Agent] Cerebras failed, falling back to Groq for chat");
-        modelUsed = "groq-llama3.3-70b";
-        const groqResult = await callGroqWithTools(systemPrompt, sanitizedMessage, conversationHistory || [], []);
-        finalContent = groqResult.content;
-      }
-
-      // Fallback to Gemini if Groq also fails
-      if (!finalContent) {
-        console.log("[Agent] Groq chat failed, falling back to Gemini");
-        modelUsed = "gemini-2.5-flash-lite";
-        const GOOGLE_API_KEY = Deno.env.get("GOOGLE_API_KEY");
-        if (GOOGLE_API_KEY) {
-          const sanitizedHistory = (conversationHistory || []).map((msg: any) => ({
-            role: msg.role === "user" ? "user" : "model",
-            parts: [{ text: sanitizeInput(msg.content, 800) }]
-          })).slice(-12);
-          
-          const contents = [...sanitizedHistory, { role: "user", parts: [{ text: sanitizedMessage }] }];
-          const geminiResult = await callGeminiWithTools(systemPrompt, contents, [], GOOGLE_API_KEY);
-          if (geminiResult.ok) {
-            finalContent = geminiResult.data?.candidates?.[0]?.content?.parts?.[0]?.text || null;
+      if (detectedLanguage === "ms") {
+        // Malay: SEA-LION -> Cerebras -> Groq
+        console.log("[Agent] Chat path -> SEA-LION (Malay)");
+        modelUsed = "sealion-v4-27b";
+        finalContent = await callSeaLionChat(systemPrompt, sanitizedMessage, conversationHistory || []);
+        if (!finalContent) { console.log("[Agent] SEA-LION failed, fallback Cerebras"); modelUsed = "cerebras-llama3.3-70b"; finalContent = await callCerebrasChat(systemPrompt, sanitizedMessage, conversationHistory || []); }
+        if (!finalContent) { console.log("[Agent] Cerebras failed, fallback Groq"); modelUsed = "groq-llama3.3-70b"; const gr = await callGroqWithTools(systemPrompt, sanitizedMessage, conversationHistory || [], []); finalContent = gr.content; }
+      } else if (detectedLanguage === "ta") {
+        // Tamil: Sarvam-M -> SEA-LION -> Cerebras -> Groq
+        console.log("[Agent] Chat path -> Sarvam-M (Tamil)");
+        modelUsed = "sarvam-m-24b";
+        finalContent = await callSarvamChat(systemPrompt, sanitizedMessage, conversationHistory || []);
+        if (!finalContent) { console.log("[Agent] Sarvam failed, fallback SEA-LION"); modelUsed = "sealion-v4-27b"; finalContent = await callSeaLionChat(systemPrompt, sanitizedMessage, conversationHistory || []); }
+        if (!finalContent) { console.log("[Agent] SEA-LION failed, fallback Cerebras"); modelUsed = "cerebras-llama3.3-70b"; finalContent = await callCerebrasChat(systemPrompt, sanitizedMessage, conversationHistory || []); }
+        if (!finalContent) { console.log("[Agent] Cerebras failed, fallback Groq"); modelUsed = "groq-llama3.3-70b"; const gr = await callGroqWithTools(systemPrompt, sanitizedMessage, conversationHistory || [], []); finalContent = gr.content; }
+      } else {
+        // English: Cerebras -> Groq -> Gemini
+        console.log("[Agent] Chat path -> Cerebras (English)");
+        modelUsed = "cerebras-llama3.3-70b";
+        finalContent = await callCerebrasChat(systemPrompt, sanitizedMessage, conversationHistory || []);
+        if (!finalContent) { console.log("[Agent] Cerebras failed, fallback Groq"); modelUsed = "groq-llama3.3-70b"; const gr = await callGroqWithTools(systemPrompt, sanitizedMessage, conversationHistory || [], []); finalContent = gr.content; }
+        if (!finalContent) {
+          console.log("[Agent] Groq failed, fallback Gemini");
+          modelUsed = "gemini-2.5-flash-lite";
+          const GOOGLE_API_KEY = Deno.env.get("GOOGLE_API_KEY");
+          if (GOOGLE_API_KEY) {
+            const sanitizedHistory = (conversationHistory || []).map((msg: any) => ({ role: msg.role === "user" ? "user" : "model", parts: [{ text: sanitizeInput(msg.content, 800) }] })).slice(-12);
+            const contents = [...sanitizedHistory, { role: "user", parts: [{ text: sanitizedMessage }] }];
+            const geminiResult = await callGeminiWithTools(systemPrompt, contents, [], GOOGLE_API_KEY);
+            if (geminiResult.ok) { finalContent = geminiResult.data?.candidates?.[0]?.content?.parts?.[0]?.text || null; }
           }
         }
       }
@@ -1386,54 +1525,68 @@ IMPORTANT: After calling any tool, provide a helpful text response that describe
       );
     }
 
-    // === TOOL PATH: data/action/support/all -> Groq (primary) with Gemini fallback ===
+    // === TOOL PATH: Language-aware routing ===
     const openaiTools = getOpenAITools(routerCategory);
-    
-    // Force tool use for data/action routes to prevent hallucination
     const toolChoice = (routerCategory === "data" || routerCategory === "action") ? "required" : "auto";
-    
-    console.log(`[Agent] Tool path -> Groq PRIMARY (tool_choice: ${toolChoice})`);
-
-    // ---- PRIMARY: Groq with tools ----
-    modelUsed = "groq-llama3.3-70b";
-    const groqResult = await callGroqWithTools(
-      systemPrompt,
-      sanitizedMessage,
-      conversationHistory || [],
-      openaiTools,
-      toolChoice as "auto" | "required"
-    );
 
     let finalContent = "";
     let allToolResults: any[] = [];
     let iterations = 0;
 
-    if (groqResult.toolCalls && groqResult.toolCalls.length > 0) {
-      // Process tool calls from Groq
-      for (const tc of groqResult.toolCalls) {
-        iterations++;
-        const toolName = tc.function.name;
-        let toolArgs = {};
-        try { toolArgs = JSON.parse(tc.function.arguments || "{}"); } catch {}
-        
-        console.log(`[Agent] Groq tool call: ${toolName}`);
-        toolsCalled.push(toolName);
-        autonomyScore++;
-        
-        try {
-          const result = await executeTool(supabase, user.id, toolName, toolArgs);
-          allToolResults.push({ tool: toolName, args: toolArgs, result });
-        } catch (toolError: any) {
-          console.error(`[Agent] Tool ${toolName} failed:`, toolError.message);
-          allToolResults.push({ tool: toolName, args: toolArgs, result: { error: toolError.message } });
+    // For Malay/Tamil: Try SEA-LION first as regional primary
+    if (detectedLanguage !== "en") {
+      console.log(`[Agent] Tool path -> SEA-LION PRIMARY for ${detectedLanguage} (tool_choice: ${toolChoice})`);
+      modelUsed = "sealion-v4-27b";
+      const seaLionResult = await callSeaLionWithTools(systemPrompt, sanitizedMessage, conversationHistory || [], openaiTools, toolChoice as "auto" | "required");
+      if (seaLionResult.toolCalls && seaLionResult.toolCalls.length > 0) {
+        for (const tc of seaLionResult.toolCalls) {
+          iterations++;
+          const toolName = tc.function.name;
+          let toolArgs = {};
+          try { toolArgs = JSON.parse(tc.function.arguments || "{}"); } catch {}
+          console.log(`[Agent] SEA-LION tool call: ${toolName}`);
+          toolsCalled.push(toolName);
+          autonomyScore++;
+          try {
+            const result = await executeTool(supabase, user.id, toolName, toolArgs);
+            allToolResults.push({ tool: toolName, args: toolArgs, result });
+          } catch (toolError: any) {
+            console.error(`[Agent] Tool ${toolName} failed:`, toolError.message);
+            allToolResults.push({ tool: toolName, args: toolArgs, result: { error: toolError.message } });
+          }
         }
+        finalContent = await getGroqFollowUp(systemPrompt, sanitizedMessage, seaLionResult.toolCalls, allToolResults);
+      } else if (seaLionResult.content) {
+        finalContent = seaLionResult.content;
       }
-      
-      // Get follow-up from Groq with tool results
-      finalContent = await getGroqFollowUp(systemPrompt, sanitizedMessage, groqResult.toolCalls, allToolResults);
-      
-    } else if (groqResult.content) {
-      finalContent = groqResult.content;
+    }
+
+    // Groq fallback (or English primary)
+    if (!finalContent && allToolResults.length === 0) {
+      console.log(`[Agent] Tool path -> Groq ${detectedLanguage === "en" ? "PRIMARY" : "FALLBACK"} (tool_choice: ${toolChoice})`);
+      modelUsed = "groq-llama3.3-70b";
+      const groqResult = await callGroqWithTools(systemPrompt, sanitizedMessage, conversationHistory || [], openaiTools, toolChoice as "auto" | "required");
+      if (groqResult.toolCalls && groqResult.toolCalls.length > 0) {
+        for (const tc of groqResult.toolCalls) {
+          iterations++;
+          const toolName = tc.function.name;
+          let toolArgs = {};
+          try { toolArgs = JSON.parse(tc.function.arguments || "{}"); } catch {}
+          console.log(`[Agent] Groq tool call: ${toolName}`);
+          toolsCalled.push(toolName);
+          autonomyScore++;
+          try {
+            const result = await executeTool(supabase, user.id, toolName, toolArgs);
+            allToolResults.push({ tool: toolName, args: toolArgs, result });
+          } catch (toolError: any) {
+            console.error(`[Agent] Tool ${toolName} failed:`, toolError.message);
+            allToolResults.push({ tool: toolName, args: toolArgs, result: { error: toolError.message } });
+          }
+        }
+        finalContent = await getGroqFollowUp(systemPrompt, sanitizedMessage, groqResult.toolCalls, allToolResults);
+      } else if (groqResult.content) {
+        finalContent = groqResult.content;
+      }
     }
 
     // ---- FALLBACK: Gemini if Groq produced nothing useful ----
@@ -1520,10 +1673,10 @@ IMPORTANT: After calling any tool, provide a helpful text response that describe
     const responseTimeMs = Date.now() - startTime;
     
     const readToolsUsed = toolsCalled.filter(t => 
-      ["get_user_progress", "get_recent_moods", "get_active_goals", "get_recent_journal_entries", "get_biometric_data", "get_conversation_context"].includes(t)
+      ["get_user_progress", "get_recent_moods", "get_active_goals", "get_recent_journal_entries", "get_biometric_data", "get_conversation_context", "analyze_mood_trend", "fetch_wearable_insights", "summarize_weekly_progress", "get_community_support_matches", "translate_response"].includes(t)
     ).length;
     const writeToolsUsed = toolsCalled.filter(t => 
-      ["create_goal", "create_check_in", "create_journal_entry", "complete_goal", "log_coping_activity", "edit_journal_entry", "delete_journal_entry", "update_goal", "delete_goal"].includes(t)
+      ["create_goal", "create_check_in", "create_journal_entry", "complete_goal", "log_coping_activity", "edit_journal_entry", "delete_journal_entry", "update_goal", "delete_goal", "schedule_reminder", "generate_relapse_prevention_plan"].includes(t)
     ).length;
     
     // Log observability
