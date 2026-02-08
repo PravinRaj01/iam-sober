@@ -715,22 +715,22 @@ const Settings = () => {
                 </div>
                 
                 {quietHoursEnabled && (
-                  <div className="ml-4 pl-4 border-l-2 border-border flex flex-wrap items-end gap-3">
+                <div className="ml-4 pl-4 border-l-2 border-border flex flex-col sm:flex-row sm:items-end gap-4">
                     <div>
                       <Label className="text-xs">Start</Label>
                       <TimePickerWheel
                         value={quietHoursStart}
                         onChange={setQuietHoursStart}
-                        className="w-32 mt-1"
+                        className="w-36 mt-1"
                       />
                     </div>
-                    <span className="text-muted-foreground pb-2">to</span>
+                    <span className="text-muted-foreground sm:pb-2">to</span>
                     <div>
                       <Label className="text-xs">End</Label>
                       <TimePickerWheel
                         value={quietHoursEnd}
                         onChange={setQuietHoursEnd}
-                        className="w-32 mt-1"
+                        className="w-36 mt-1"
                       />
                     </div>
                   </div>

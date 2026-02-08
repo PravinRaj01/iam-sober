@@ -18,10 +18,17 @@ serve(async (req) => {
     const supabase = createClient(supabaseUrl, supabaseKey);
 
     const vapid = getVapidKeys();
-    const { user_id, title, body, icon, url, data } = await req.json();
+    const { user_id, title, body, icon, url, data, delay_seconds } = await req.json();
 
     if (!user_id) {
       throw new Error("user_id is required");
+    }
+
+    // Server-side delay (max 120s to stay within edge function limits)
+    if (delay_seconds && delay_seconds > 0) {
+      const actualDelay = Math.min(delay_seconds, 120);
+      console.log(`Sleeping ${actualDelay}s before sending push to user: ${user_id}`);
+      await new Promise(r => setTimeout(r, actualDelay * 1000));
     }
 
     const { data: subscription, error: subError } = await supabase

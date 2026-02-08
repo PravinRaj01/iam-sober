@@ -12,7 +12,7 @@ import {
   DropdownMenuLabel,
 } from "@/components/ui/dropdown-menu";
 
-type Status = "idle" | "sending" | "sent" | "error" | "scheduled";
+type Status = "idle" | "sending" | "scheduled" | "sent" | "error";
 
 export const TestNotificationButton = () => {
   const [status, setStatus] = useState<Status>("idle");
@@ -20,23 +20,6 @@ export const TestNotificationButton = () => {
   const { toast } = useToast();
 
   const sendTest = async (delaySeconds: number = 0) => {
-    if (delaySeconds > 0) {
-      const label = delaySeconds >= 60 ? `${delaySeconds / 60} min` : `${delaySeconds}s`;
-      setScheduledLabel(label);
-      setStatus("scheduled");
-      toast({
-        title: `Scheduled in ${label}`,
-        description: "Close the app to test background delivery!",
-      });
-      setTimeout(() => {
-        fireNotification();
-      }, delaySeconds * 1000);
-      return;
-    }
-    fireNotification();
-  };
-
-  const fireNotification = async () => {
     setStatus("sending");
     try {
       const { data: { user } } = await supabase.auth.getUser();
@@ -46,20 +29,35 @@ export const TestNotificationButton = () => {
         body: {
           user_id: user.id,
           title: "🎉 Test Notification",
-          body: "Push notifications are working! You'll receive check-in reminders and AI insights here.",
+          body: delaySeconds > 0
+            ? `This was scheduled ${delaySeconds}s ago — background delivery works!`
+            : "Push notifications are working! You'll receive check-in reminders and AI insights here.",
           url: "/settings",
+          delay_seconds: delaySeconds,
         },
       });
 
       if (error) throw error;
       if (data && !data.success) throw new Error(data.message || "Failed to send");
 
-      setStatus("sent");
-      toast({
-        title: "Test sent!",
-        description: "You should receive a notification shortly.",
-      });
-      setTimeout(() => setStatus("idle"), 5000);
+      if (delaySeconds > 0) {
+        const label = delaySeconds >= 60 ? `${delaySeconds / 60} min` : `${delaySeconds}s`;
+        setScheduledLabel(label);
+        setStatus("scheduled");
+        toast({
+          title: `Scheduled in ${label}`,
+          description: "Notification is being handled server-side. You can close the app now!",
+        });
+        // Reset after the delay passes
+        setTimeout(() => setStatus("idle"), Math.min(delaySeconds * 1000 + 5000, 15000));
+      } else {
+        setStatus("sent");
+        toast({
+          title: "Test sent!",
+          description: "You should receive a notification shortly.",
+        });
+        setTimeout(() => setStatus("idle"), 5000);
+      }
     } catch (err: any) {
       console.error("[TestNotification]", err);
       setStatus("error");
@@ -76,7 +74,7 @@ export const TestNotificationButton = () => {
     return (
       <Button variant="outline" className="w-full" disabled>
         <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-        Sending...
+        Sending to server...
       </Button>
     );
   }
@@ -103,7 +101,7 @@ export const TestNotificationButton = () => {
     return (
       <Button variant="outline" className="w-full" disabled>
         <Timer className="mr-2 h-4 w-4 animate-pulse text-primary" />
-        Sending in {scheduledLabel}... (close app to test!)
+        Server will send in {scheduledLabel} — close the app!
       </Button>
     );
   }
@@ -127,19 +125,15 @@ export const TestNotificationButton = () => {
         </DropdownMenuItem>
         <DropdownMenuItem onClick={() => sendTest(30)}>
           <Timer className="mr-2 h-4 w-4" />
-          In 30 seconds
+          In 30 seconds (server-side)
         </DropdownMenuItem>
         <DropdownMenuItem onClick={() => sendTest(60)}>
           <Timer className="mr-2 h-4 w-4" />
-          In 1 minute
+          In 1 minute (server-side)
         </DropdownMenuItem>
         <DropdownMenuItem onClick={() => sendTest(120)}>
           <Clock className="mr-2 h-4 w-4" />
-          In 2 minutes
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => sendTest(300)}>
-          <Clock className="mr-2 h-4 w-4" />
-          In 5 minutes
+          In 2 minutes (server-side)
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

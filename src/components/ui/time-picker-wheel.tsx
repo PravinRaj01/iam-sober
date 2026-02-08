@@ -90,7 +90,7 @@ export function TimePickerWheel({ value, onChange, className }: TimePickerWheelP
           {formatTime12h(value)}
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-auto p-0" align="start" side="bottom">
+      <PopoverContent className="w-auto p-0" align="center" side="bottom" sideOffset={8} avoidCollisions collisionPadding={16}>
         <div className="p-4 space-y-4">
           {/* Header: HH : MM  AM/PM */}
           <p className="text-[10px] uppercase tracking-widest text-muted-foreground font-semibold">
@@ -176,9 +176,9 @@ interface ClockFaceProps {
 }
 
 function ClockFace({ mode, selectedHour, selectedMinute, onHourClick, onMinuteClick }: ClockFaceProps) {
-  const size = 220;
+  const size = 200;
   const center = size / 2;
-  const radius = 85;
+  const radius = 78;
 
   const items = mode === "hour"
     ? Array.from({ length: 12 }, (_, i) => i + 1)
