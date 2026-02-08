@@ -2,6 +2,67 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 
+/**
+ * Convert a URL-safe base64 VAPID key to a Uint8Array for pushManager.subscribe()
+ */
+const urlBase64ToUint8Array = (base64String: string): Uint8Array => {
+  const padding = '='.repeat((4 - base64String.length % 4) % 4);
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const rawData = window.atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
+  for (let i = 0; i < rawData.length; ++i) {
+    outputArray[i] = rawData.charCodeAt(i);
+  }
+  return outputArray;
+};
+
+/**
+ * Remove any stale /sw-push.js registrations left over from previous attempts.
+ * Only the main PWA worker (/sw.js) should be registered.
+ */
+const cleanupStaleWorkers = async () => {
+  try {
+    const registrations = await navigator.serviceWorker.getRegistrations();
+    for (const reg of registrations) {
+      if (reg.active?.scriptURL?.includes('sw-push.js')) {
+        console.log('[Push] Unregistering stale sw-push.js worker');
+        await reg.unregister();
+      }
+    }
+  } catch (err) {
+    console.warn('[Push] Error cleaning up stale workers:', err);
+  }
+};
+
+/**
+ * Wait until the service worker registration has an active (activated) worker.
+ * navigator.serviceWorker.ready can resolve before the worker is fully activated.
+ */
+const waitForActivation = (registration: ServiceWorkerRegistration): Promise<ServiceWorkerRegistration> => {
+  return new Promise((resolve, reject) => {
+    const sw = registration.active || registration.installing || registration.waiting;
+    if (!sw) {
+      reject(new Error('No service worker found in registration'));
+      return;
+    }
+    if (sw.state === 'activated') {
+      resolve(registration);
+      return;
+    }
+    console.log('[Push] Waiting for SW activation, current state:', sw.state);
+    const timeout = setTimeout(() => {
+      reject(new Error('Service worker activation timed out'));
+    }, 10000);
+    sw.addEventListener('statechange', () => {
+      console.log('[Push] SW state changed to:', sw.state);
+      if (sw.state === 'activated') {
+        clearTimeout(timeout);
+        resolve(registration);
+      }
+    });
+  });
+};
+
 export const usePushNotifications = () => {
   const [isSupported, setIsSupported] = useState(false);
   const [isSubscribed, setIsSubscribed] = useState(false);
@@ -9,57 +70,33 @@ export const usePushNotifications = () => {
   const vapidKeyRef = useRef<string | null>(null);
   const { toast } = useToast();
 
+  // Check support and existing subscription on mount
   useEffect(() => {
-    // Check if push notifications are supported
-    const checkSupport = async () => {
+    const init = async () => {
       const supported = 'serviceWorker' in navigator && 'PushManager' in window;
       setIsSupported(supported);
-      
-      if (supported) {
-        // Register the push service worker if not already registered
-        try {
-          const existingRegistration = await navigator.serviceWorker.getRegistration('/sw-push.js');
-          if (!existingRegistration) {
-            await navigator.serviceWorker.register('/sw-push.js', { scope: '/' });
-            console.log('Push service worker registered');
-          }
-        } catch (err) {
-          console.error('Failed to register push service worker:', err);
-        }
-        
-        checkSubscription();
+      if (!supported) {
+        console.log('[Push] Push notifications not supported in this browser');
+        return;
+      }
+
+      // Clean up any stale sw-push.js registrations from previous attempts
+      await cleanupStaleWorkers();
+
+      // Check if already subscribed via the PWA service worker
+      try {
+        const registration = await navigator.serviceWorker.ready;
+        console.log('[Push] PWA SW ready, scope:', registration.scope);
+        const subscription = await registration.pushManager.getSubscription();
+        setIsSubscribed(!!subscription);
+        console.log('[Push] Existing subscription:', !!subscription);
+      } catch (error) {
+        console.error('[Push] Error checking subscription:', error);
       }
     };
 
-    checkSupport();
+    init();
   }, []);
-
-  const checkSubscription = async () => {
-    try {
-      const registration = await navigator.serviceWorker.getRegistration('/sw-push.js');
-      if (registration) {
-        const subscription = await registration.pushManager.getSubscription();
-        setIsSubscribed(!!subscription);
-      }
-    } catch (error) {
-      console.error('Error checking push subscription:', error);
-    }
-  };
-
-  const urlBase64ToUint8Array = (base64String: string) => {
-    const padding = '='.repeat((4 - base64String.length % 4) % 4);
-    const base64 = (base64String + padding)
-      .replace(/-/g, '+')
-      .replace(/_/g, '/');
-
-    const rawData = window.atob(base64);
-    const outputArray = new Uint8Array(rawData.length);
-
-    for (let i = 0; i < rawData.length; ++i) {
-      outputArray[i] = rawData.charCodeAt(i);
-    }
-    return outputArray;
-  };
 
   const subscribe = useCallback(async () => {
     if (!isSupported) {
@@ -74,18 +111,22 @@ export const usePushNotifications = () => {
     setIsLoading(true);
 
     try {
-      // Fetch VAPID key from edge function if not cached
+      // 1. Fetch VAPID key
+      console.log('[Push] Step 1: Fetching VAPID key...');
       if (!vapidKeyRef.current) {
         const { data, error } = await supabase.functions.invoke('get-vapid-key');
         if (error || !data?.vapidPublicKey) {
-          throw new Error('Failed to fetch VAPID key');
+          throw new Error('Failed to fetch VAPID key from server');
         }
         vapidKeyRef.current = data.vapidPublicKey;
+        console.log('[Push] VAPID key fetched, length:', data.vapidPublicKey.length);
       }
 
-      // Request notification permission
+      // 2. Request notification permission
+      console.log('[Push] Step 2: Requesting notification permission...');
       const permission = await Notification.requestPermission();
-      
+      console.log('[Push] Permission result:', permission);
+
       if (permission !== 'granted') {
         toast({
           title: 'Permission denied',
@@ -95,31 +136,39 @@ export const usePushNotifications = () => {
         return false;
       }
 
-      // Get service worker registration for push
-      let registration = await navigator.serviceWorker.getRegistration('/sw-push.js');
-      if (!registration) {
-        registration = await navigator.serviceWorker.register('/sw-push.js', { scope: '/' });
-        // Wait for the service worker to be ready
-        await navigator.serviceWorker.ready;
-      }
+      // 3. Clean up stale workers
+      console.log('[Push] Step 3: Cleaning up stale workers...');
+      await cleanupStaleWorkers();
 
-      // Subscribe to push notifications
+      // 4. Get the PWA service worker registration
+      console.log('[Push] Step 4: Getting PWA service worker...');
+      const registration = await navigator.serviceWorker.ready;
+      console.log('[Push] SW ready, scope:', registration.scope, 'active:', !!registration.active);
+
+      // 5. Ensure the worker is fully activated
+      console.log('[Push] Step 5: Ensuring SW is activated...');
+      await waitForActivation(registration);
+      console.log('[Push] SW is activated');
+
+      // 6. Subscribe to push
+      console.log('[Push] Step 6: Subscribing to push...');
+      const applicationServerKey = urlBase64ToUint8Array(vapidKeyRef.current!);
       const subscription = await registration.pushManager.subscribe({
         userVisibleOnly: true,
-        applicationServerKey: urlBase64ToUint8Array(vapidKeyRef.current!),
+        applicationServerKey: applicationServerKey.buffer as ArrayBuffer,
       });
+      console.log('[Push] Subscription created:', subscription.endpoint.substring(0, 50) + '...');
 
-      // Get subscription keys
-      const subscriptionJson = subscription.toJSON();
-      const keys = subscriptionJson.keys || {};
-      
-      // Save to Supabase
+      // 7. Save to Supabase
+      console.log('[Push] Step 7: Saving subscription to database...');
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
         throw new Error('Not authenticated');
       }
 
-      // Save subscription to database
+      const subscriptionJson = subscription.toJSON();
+      const keys = subscriptionJson.keys || {};
+
       const { error } = await supabase
         .from('push_subscriptions')
         .upsert({
@@ -133,10 +182,11 @@ export const usePushNotifications = () => {
         });
 
       if (error) {
-        console.error('Error saving subscription:', error);
-        throw new Error('Failed to save subscription');
+        console.error('[Push] Error saving subscription:', error);
+        throw new Error('Failed to save subscription to database');
       }
 
+      console.log('[Push] ✅ Push notifications enabled successfully');
       setIsSubscribed(true);
       toast({
         title: 'Notifications enabled!',
@@ -145,10 +195,20 @@ export const usePushNotifications = () => {
 
       return true;
     } catch (error: any) {
-      console.error('Error subscribing to push notifications:', error);
+      console.error('[Push] ❌ Error subscribing:', error);
+
+      let description = error.message || 'Failed to enable push notifications.';
+
+      // Provide specific error messages for common failures
+      if (error.message?.includes('push service')) {
+        description = 'Push service error. Try clearing site data in browser settings and retry.';
+      } else if (error.code === 11 || error.name === 'InvalidStateError') {
+        description = 'Service worker not ready. Please refresh the page and try again.';
+      }
+
       toast({
         title: 'Error',
-        description: error.message || 'Failed to enable push notifications.',
+        description,
         variant: 'destructive',
       });
       return false;
@@ -161,13 +221,13 @@ export const usePushNotifications = () => {
     setIsLoading(true);
 
     try {
-      const registration = await navigator.serviceWorker.getRegistration('/sw-push.js');
-      if (registration) {
-        const subscription = await registration.pushManager.getSubscription();
+      console.log('[Push] Unsubscribing...');
+      const registration = await navigator.serviceWorker.ready;
+      const subscription = await registration.pushManager.getSubscription();
 
-        if (subscription) {
-          await subscription.unsubscribe();
-        }
+      if (subscription) {
+        await subscription.unsubscribe();
+        console.log('[Push] Browser subscription removed');
       }
 
       // Remove from database
@@ -177,6 +237,7 @@ export const usePushNotifications = () => {
           .from('push_subscriptions')
           .delete()
           .eq('user_id', user.id);
+        console.log('[Push] Database record deleted');
       }
 
       setIsSubscribed(false);
@@ -187,7 +248,7 @@ export const usePushNotifications = () => {
 
       return true;
     } catch (error: any) {
-      console.error('Error unsubscribing from push notifications:', error);
+      console.error('[Push] Error unsubscribing:', error);
       toast({
         title: 'Error',
         description: error.message || 'Failed to disable push notifications.',
