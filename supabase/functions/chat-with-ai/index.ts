@@ -1220,10 +1220,10 @@ async function executeTool(supabase: any, userId: string, toolName: string, args
         day, avgMood: (data.scores.reduce((a, b) => a + b, 0) / data.scores.length).toFixed(1),
         avgUrge: (data.urges.reduce((a, b) => a + b, 0) / data.urges.length).toFixed(1),
       })).sort((a, b) => Number(a.avgMood) - Number(b.avgMood));
-      const recentScores = checkIns.slice(-7).map(ci => moodScores[ci.mood] || 3);
-      const olderScores = checkIns.slice(0, 7).map(ci => moodScores[ci.mood] || 3);
-      const recentAvg = recentScores.reduce((a, b) => a + b, 0) / recentScores.length;
-      const olderAvg = olderScores.length > 0 ? olderScores.reduce((a, b) => a + b, 0) / olderScores.length : recentAvg;
+      const recentScores = checkIns.slice(-7).map((ci: any) => moodScores[ci.mood] || 3);
+      const olderScores = checkIns.slice(0, 7).map((ci: any) => moodScores[ci.mood] || 3);
+      const recentAvg = recentScores.reduce((a: number, b: number) => a + b, 0) / recentScores.length;
+      const olderAvg = olderScores.length > 0 ? olderScores.reduce((a: number, b: number) => a + b, 0) / olderScores.length : recentAvg;
       const trend = recentAvg > olderAvg + 0.3 ? "improving" : recentAvg < olderAvg - 0.3 ? "declining" : "stable";
       return { has_data: true, period_days: days, total_check_ins: checkIns.length, overall_trend: trend, highest_risk_days: dayRisks.slice(0, 2).map(d => d.day), day_breakdown: dayRisks, recent_avg_mood: recentAvg.toFixed(1), prediction: trend === "declining" ? "⚠️ Mood trending down. Consider extra self-care." : trend === "improving" ? "📈 Great progress! Mood improving." : "➡️ Mood stable. Consistency is key." };
     }

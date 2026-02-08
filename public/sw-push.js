@@ -1,6 +1,13 @@
 // Service Worker Push Notification Handler
 // This file handles incoming push notifications
 
+// Ensure this service worker activates immediately and takes control
+self.skipWaiting();
+
+self.addEventListener('activate', function(event) {
+  event.waitUntil(clients.claim());
+});
+
 self.addEventListener('push', function(event) {
   console.log('[SW] Push received:', event);
   

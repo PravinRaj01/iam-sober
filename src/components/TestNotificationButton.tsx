@@ -1,14 +1,42 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Bell, Loader2, CheckCircle2, XCircle } from "lucide-react";
+import { Bell, Loader2, CheckCircle2, XCircle, Timer, Clock } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+  DropdownMenuSeparator,
+  DropdownMenuLabel,
+} from "@/components/ui/dropdown-menu";
+
+type Status = "idle" | "sending" | "sent" | "error" | "scheduled";
 
 export const TestNotificationButton = () => {
-  const [status, setStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");
+  const [status, setStatus] = useState<Status>("idle");
+  const [scheduledLabel, setScheduledLabel] = useState("");
   const { toast } = useToast();
 
-  const sendTest = async () => {
+  const sendTest = async (delaySeconds: number = 0) => {
+    if (delaySeconds > 0) {
+      const label = delaySeconds >= 60 ? `${delaySeconds / 60} min` : `${delaySeconds}s`;
+      setScheduledLabel(label);
+      setStatus("scheduled");
+      toast({
+        title: `Scheduled in ${label}`,
+        description: "Close the app to test background delivery!",
+      });
+      setTimeout(() => {
+        fireNotification();
+      }, delaySeconds * 1000);
+      return;
+    }
+    fireNotification();
+  };
+
+  const fireNotification = async () => {
     setStatus("sending");
     try {
       const { data: { user } } = await supabase.auth.getUser();
@@ -31,7 +59,6 @@ export const TestNotificationButton = () => {
         title: "Test sent!",
         description: "You should receive a notification shortly.",
       });
-
       setTimeout(() => setStatus("idle"), 5000);
     } catch (err: any) {
       console.error("[TestNotification]", err);
@@ -45,37 +72,76 @@ export const TestNotificationButton = () => {
     }
   };
 
+  if (status === "sending") {
+    return (
+      <Button variant="outline" className="w-full" disabled>
+        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+        Sending...
+      </Button>
+    );
+  }
+
+  if (status === "sent") {
+    return (
+      <Button variant="outline" className="w-full" disabled>
+        <CheckCircle2 className="mr-2 h-4 w-4 text-primary" />
+        Sent! Check your notifications
+      </Button>
+    );
+  }
+
+  if (status === "error") {
+    return (
+      <Button variant="outline" className="w-full" onClick={() => sendTest(0)}>
+        <XCircle className="mr-2 h-4 w-4 text-destructive" />
+        Failed — tap to retry
+      </Button>
+    );
+  }
+
+  if (status === "scheduled") {
+    return (
+      <Button variant="outline" className="w-full" disabled>
+        <Timer className="mr-2 h-4 w-4 animate-pulse text-primary" />
+        Sending in {scheduledLabel}... (close app to test!)
+      </Button>
+    );
+  }
+
   return (
-    <Button
-      variant="outline"
-      className="w-full"
-      onClick={sendTest}
-      disabled={status === "sending"}
-    >
-      {status === "sending" && (
-        <>
-          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-          Sending...
-        </>
-      )}
-      {status === "sent" && (
-        <>
-          <CheckCircle2 className="mr-2 h-4 w-4 text-primary" />
-          Sent! Check your notifications
-        </>
-      )}
-      {status === "error" && (
-        <>
-          <XCircle className="mr-2 h-4 w-4 text-destructive" />
-          Failed — tap to retry
-        </>
-      )}
-      {status === "idle" && (
-        <>
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="outline" className="w-full">
           <Bell className="mr-2 h-4 w-4" />
           Send Test Notification
-        </>
-      )}
-    </Button>
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="center" className="w-56">
+        <DropdownMenuLabel className="text-xs text-muted-foreground">
+          Choose when to send
+        </DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem onClick={() => sendTest(0)}>
+          <Bell className="mr-2 h-4 w-4" />
+          Send Now
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => sendTest(30)}>
+          <Timer className="mr-2 h-4 w-4" />
+          In 30 seconds
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => sendTest(60)}>
+          <Timer className="mr-2 h-4 w-4" />
+          In 1 minute
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => sendTest(120)}>
+          <Clock className="mr-2 h-4 w-4" />
+          In 2 minutes
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => sendTest(300)}>
+          <Clock className="mr-2 h-4 w-4" />
+          In 5 minutes
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 };

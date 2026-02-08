@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { TimePickerWheel } from "@/components/ui/time-picker-wheel";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -67,29 +68,77 @@ const Settings = () => {
   const [quietHoursStart, setQuietHoursStart] = useState("22:00");
   const [quietHoursEnd, setQuietHoursEnd] = useState("08:00");
 
-  // Common timezones list
+  // Comprehensive timezone list grouped by region
   const COMMON_TIMEZONES = [
-    { value: "America/New_York", label: "Eastern Time (ET)" },
-    { value: "America/Chicago", label: "Central Time (CT)" },
-    { value: "America/Denver", label: "Mountain Time (MT)" },
-    { value: "America/Los_Angeles", label: "Pacific Time (PT)" },
-    { value: "America/Anchorage", label: "Alaska Time" },
-    { value: "Pacific/Honolulu", label: "Hawaii Time" },
+    // Americas
+    { value: "America/New_York", label: "New York (ET)" },
+    { value: "America/Chicago", label: "Chicago (CT)" },
+    { value: "America/Denver", label: "Denver (MT)" },
+    { value: "America/Los_Angeles", label: "Los Angeles (PT)" },
+    { value: "America/Anchorage", label: "Alaska" },
+    { value: "Pacific/Honolulu", label: "Hawaii" },
+    { value: "America/Toronto", label: "Toronto (ET)" },
+    { value: "America/Vancouver", label: "Vancouver (PT)" },
+    { value: "America/Mexico_City", label: "Mexico City" },
+    { value: "America/Bogota", label: "Bogotá" },
+    { value: "America/Lima", label: "Lima" },
+    { value: "America/Santiago", label: "Santiago" },
+    { value: "America/Buenos_Aires", label: "Buenos Aires" },
+    { value: "America/Sao_Paulo", label: "São Paulo" },
+    // Europe
     { value: "Europe/London", label: "London (GMT/BST)" },
     { value: "Europe/Paris", label: "Paris (CET)" },
     { value: "Europe/Berlin", label: "Berlin (CET)" },
+    { value: "Europe/Madrid", label: "Madrid (CET)" },
+    { value: "Europe/Rome", label: "Rome (CET)" },
+    { value: "Europe/Amsterdam", label: "Amsterdam (CET)" },
+    { value: "Europe/Zurich", label: "Zurich (CET)" },
+    { value: "Europe/Stockholm", label: "Stockholm (CET)" },
+    { value: "Europe/Warsaw", label: "Warsaw (CET)" },
+    { value: "Europe/Athens", label: "Athens (EET)" },
+    { value: "Europe/Helsinki", label: "Helsinki (EET)" },
+    { value: "Europe/Bucharest", label: "Bucharest (EET)" },
+    { value: "Europe/Istanbul", label: "Istanbul (TRT)" },
+    { value: "Europe/Moscow", label: "Moscow (MSK)" },
+    // Middle East
     { value: "Asia/Dubai", label: "Dubai (GST)" },
+    { value: "Asia/Riyadh", label: "Riyadh (AST)" },
+    { value: "Asia/Tehran", label: "Tehran (IRST)" },
+    { value: "Asia/Jerusalem", label: "Jerusalem (IST)" },
+    // South Asia
+    { value: "Asia/Karachi", label: "Karachi (PKT)" },
     { value: "Asia/Kolkata", label: "India (IST)" },
+    { value: "Asia/Colombo", label: "Colombo (IST)" },
+    { value: "Asia/Dhaka", label: "Dhaka (BST)" },
+    { value: "Asia/Kathmandu", label: "Kathmandu (NPT)" },
+    // Southeast Asia
+    { value: "Asia/Kuala_Lumpur", label: "Malaysia (MYT)" },
     { value: "Asia/Singapore", label: "Singapore (SGT)" },
-    { value: "Asia/Tokyo", label: "Tokyo (JST)" },
+    { value: "Asia/Bangkok", label: "Bangkok (ICT)" },
+    { value: "Asia/Ho_Chi_Minh", label: "Ho Chi Minh (ICT)" },
+    { value: "Asia/Jakarta", label: "Jakarta (WIB)" },
+    { value: "Asia/Manila", label: "Manila (PHT)" },
+    { value: "Asia/Yangon", label: "Yangon (MMT)" },
+    // East Asia
     { value: "Asia/Shanghai", label: "China (CST)" },
-    { value: "Australia/Sydney", label: "Sydney (AEST)" },
+    { value: "Asia/Hong_Kong", label: "Hong Kong (HKT)" },
+    { value: "Asia/Taipei", label: "Taipei (CST)" },
+    { value: "Asia/Tokyo", label: "Tokyo (JST)" },
+    { value: "Asia/Seoul", label: "Seoul (KST)" },
+    // Oceania
     { value: "Australia/Perth", label: "Perth (AWST)" },
+    { value: "Australia/Adelaide", label: "Adelaide (ACST)" },
+    { value: "Australia/Sydney", label: "Sydney (AEST)" },
+    { value: "Australia/Brisbane", label: "Brisbane (AEST)" },
+    { value: "Australia/Melbourne", label: "Melbourne (AEST)" },
     { value: "Pacific/Auckland", label: "Auckland (NZST)" },
-    { value: "Africa/Johannesburg", label: "Johannesburg (SAST)" },
+    { value: "Pacific/Fiji", label: "Fiji" },
+    // Africa
+    { value: "Africa/Cairo", label: "Cairo (EET)" },
     { value: "Africa/Lagos", label: "Lagos (WAT)" },
-    { value: "America/Sao_Paulo", label: "São Paulo (BRT)" },
-    { value: "America/Mexico_City", label: "Mexico City (CST)" },
+    { value: "Africa/Nairobi", label: "Nairobi (EAT)" },
+    { value: "Africa/Johannesburg", label: "Johannesburg (SAST)" },
+    { value: "Africa/Casablanca", label: "Casablanca (WET)" },
   ];
 
   // Privacy settings
@@ -501,70 +550,49 @@ const Settings = () => {
             </CardTitle>
             <CardDescription>{t("settings.notificationsDesc")}</CardDescription>
           </CardHeader>
-          <CardContent className="space-y-6">
+          <CardContent className="space-y-5">
+            {/* Timezone - moved to top as it applies to all times */}
+            <div className="space-y-2">
+              <Label className="text-sm flex items-center gap-2">
+                <Globe className="h-4 w-4" />
+                {t("settings.timezone")}
+              </Label>
+              <Select value={timezone} onValueChange={setTimezone}>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Select timezone" />
+                </SelectTrigger>
+                <SelectContent className="max-h-[300px]">
+                  {COMMON_TIMEZONES.map((tz) => (
+                    <SelectItem key={tz.value} value={tz.value}>
+                      {tz.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                {t("settings.timezoneAuto")} {Intl.DateTimeFormat().resolvedOptions().timeZone}
+              </p>
+            </div>
+
+            <Separator />
+
             {/* Daily Check-in Reminder */}
             <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <div className="space-y-0.5">
+              <div className="flex items-center justify-between gap-4">
+                <div className="space-y-0.5 min-w-0">
                   <Label>{t("settings.dailyReminder")}</Label>
                   <p className="text-sm text-muted-foreground">{t("settings.dailyReminderDesc")}</p>
                 </div>
-                <Switch checked={dailyReminder} onCheckedChange={setDailyReminder} />
+                <Switch checked={dailyReminder} onCheckedChange={setDailyReminder} className="shrink-0" />
               </div>
               {dailyReminder && (
-                <div className="ml-4 pl-4 border-l-2 border-border space-y-3">
-                  <div>
-                    <Label className="text-sm">{t("settings.reminderTime")}</Label>
-                    <Select value={dailyReminderTime} onValueChange={setDailyReminderTime}>
-                      <SelectTrigger className="w-32 mt-1">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="06:00">6:00 AM</SelectItem>
-                        <SelectItem value="06:30">6:30 AM</SelectItem>
-                        <SelectItem value="07:00">7:00 AM</SelectItem>
-                        <SelectItem value="07:30">7:30 AM</SelectItem>
-                        <SelectItem value="08:00">8:00 AM</SelectItem>
-                        <SelectItem value="08:30">8:30 AM</SelectItem>
-                        <SelectItem value="09:00">9:00 AM</SelectItem>
-                        <SelectItem value="09:30">9:30 AM</SelectItem>
-                        <SelectItem value="10:00">10:00 AM</SelectItem>
-                        <SelectItem value="10:30">10:30 AM</SelectItem>
-                        <SelectItem value="11:00">11:00 AM</SelectItem>
-                        <SelectItem value="11:30">11:30 AM</SelectItem>
-                        <SelectItem value="12:00">12:00 PM</SelectItem>
-                        <SelectItem value="12:30">12:30 PM</SelectItem>
-                        <SelectItem value="13:00">1:00 PM</SelectItem>
-                        <SelectItem value="14:00">2:00 PM</SelectItem>
-                        <SelectItem value="15:00">3:00 PM</SelectItem>
-                        <SelectItem value="16:00">4:00 PM</SelectItem>
-                        <SelectItem value="17:00">5:00 PM</SelectItem>
-                        <SelectItem value="18:00">6:00 PM</SelectItem>
-                        <SelectItem value="19:00">7:00 PM</SelectItem>
-                        <SelectItem value="20:00">8:00 PM</SelectItem>
-                        <SelectItem value="21:00">9:00 PM</SelectItem>
-                        <SelectItem value="22:00">10:00 PM</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div>
-                    <Label className="text-sm">{t("settings.timezone")}</Label>
-                    <Select value={timezone} onValueChange={setTimezone}>
-                      <SelectTrigger className="w-full mt-1">
-                        <SelectValue placeholder="Select timezone" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {COMMON_TIMEZONES.map((tz) => (
-                          <SelectItem key={tz.value} value={tz.value}>
-                            {tz.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      {t("settings.timezoneAuto")} {Intl.DateTimeFormat().resolvedOptions().timeZone}
-                    </p>
-                  </div>
+                <div className="ml-4 pl-4 border-l-2 border-border">
+                  <Label className="text-sm">{t("settings.reminderTime")}</Label>
+                  <TimePickerWheel
+                    value={dailyReminderTime}
+                    onChange={setDailyReminderTime}
+                    className="w-36 mt-1"
+                  />
                 </div>
               )}
             </div>
@@ -573,19 +601,19 @@ const Settings = () => {
 
             {/* Weekly Progress Report */}
             <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <div className="space-y-0.5">
+              <div className="flex items-center justify-between gap-4">
+                <div className="space-y-0.5 min-w-0">
                   <Label>{t("settings.weeklyReport")}</Label>
                   <p className="text-sm text-muted-foreground">{t("settings.weeklyReportDesc")}</p>
                 </div>
-                <Switch checked={weeklyReport} onCheckedChange={setWeeklyReport} />
+                <Switch checked={weeklyReport} onCheckedChange={setWeeklyReport} className="shrink-0" />
               </div>
               {weeklyReport && (
                 <div className="ml-4 pl-4 border-l-2 border-border space-y-3">
                   <div>
                     <Label className="text-sm">{t("settings.reportDay")}</Label>
                     <Select value={weeklyReportDay} onValueChange={setWeeklyReportDay}>
-                      <SelectTrigger className="w-32 mt-1">
+                      <SelectTrigger className="w-40 mt-1">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -601,21 +629,11 @@ const Settings = () => {
                   </div>
                   <div>
                     <Label className="text-sm">Report Time</Label>
-                    <Select value={weeklyReportTime} onValueChange={setWeeklyReportTime}>
-                      <SelectTrigger className="w-32 mt-1">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="08:00">8:00 AM</SelectItem>
-                        <SelectItem value="09:00">9:00 AM</SelectItem>
-                        <SelectItem value="10:00">10:00 AM</SelectItem>
-                        <SelectItem value="11:00">11:00 AM</SelectItem>
-                        <SelectItem value="12:00">12:00 PM</SelectItem>
-                        <SelectItem value="14:00">2:00 PM</SelectItem>
-                        <SelectItem value="17:00">5:00 PM</SelectItem>
-                        <SelectItem value="19:00">7:00 PM</SelectItem>
-                      </SelectContent>
-                    </Select>
+                    <TimePickerWheel
+                      value={weeklyReportTime}
+                      onChange={setWeeklyReportTime}
+                      className="w-36 mt-1"
+                    />
                   </div>
                 </div>
               )}
@@ -623,22 +641,22 @@ const Settings = () => {
 
             <Separator />
 
-            <div className="flex items-center justify-between">
-              <div className="space-y-0.5">
+            <div className="flex items-center justify-between gap-4">
+              <div className="space-y-0.5 min-w-0">
                 <Label>{t("settings.milestoneAlerts")}</Label>
                 <p className="text-sm text-muted-foreground">{t("settings.milestoneAlertsDesc")}</p>
               </div>
-              <Switch checked={milestoneAlerts} onCheckedChange={setMilestoneAlerts} />
+              <Switch checked={milestoneAlerts} onCheckedChange={setMilestoneAlerts} className="shrink-0" />
             </div>
 
             <Separator />
 
-            <div className="flex items-center justify-between">
-              <div className="space-y-0.5">
+            <div className="flex items-center justify-between gap-4">
+              <div className="space-y-0.5 min-w-0">
                 <Label>{t("settings.supporterUpdates")}</Label>
                 <p className="text-sm text-muted-foreground">{t("settings.supporterUpdatesDesc")}</p>
               </div>
-              <Switch checked={supporterUpdates} onCheckedChange={setSupporterUpdates} />
+              <Switch checked={supporterUpdates} onCheckedChange={setSupporterUpdates} className="shrink-0" />
             </div>
 
             <Separator />
@@ -651,42 +669,40 @@ const Settings = () => {
               </div>
               
               <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="space-y-0.5">
+                <div className="flex items-center justify-between gap-4">
+                  <div className="space-y-0.5 min-w-0">
                     <Label>Proactive Check-ins</Label>
                     <p className="text-sm text-muted-foreground">
                       Let AI Coach reach out when it detects you may need support
                     </p>
                   </div>
-                  <Switch checked={proactiveEnabled} onCheckedChange={setProactiveEnabled} />
+                  <Switch checked={proactiveEnabled} onCheckedChange={setProactiveEnabled} className="shrink-0" />
                 </div>
                 
                 {proactiveEnabled && (
-                  <div className="ml-4 pl-4 border-l-2 border-border space-y-4">
-                    <div>
-                      <Label className="text-sm">Check-in Frequency</Label>
-                      <Select value={proactiveFrequency} onValueChange={setProactiveFrequency}>
-                        <SelectTrigger className="w-40 mt-1">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="low">Low (once daily)</SelectItem>
-                          <SelectItem value="medium">Medium (every 6 hours)</SelectItem>
-                          <SelectItem value="high">High (when risk detected)</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <p className="text-xs text-muted-foreground mt-1">
-                        Higher frequency means more proactive support during difficult times
-                      </p>
-                    </div>
+                  <div className="ml-4 pl-4 border-l-2 border-border">
+                    <Label className="text-sm">Check-in Frequency</Label>
+                    <Select value={proactiveFrequency} onValueChange={setProactiveFrequency}>
+                      <SelectTrigger className="w-full sm:w-48 mt-1">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="low">Low (once daily)</SelectItem>
+                        <SelectItem value="medium">Medium (every 6 hours)</SelectItem>
+                        <SelectItem value="high">High (when risk detected)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Higher frequency means more proactive support during difficult times
+                    </p>
                   </div>
                 )}
               </div>
               
               {/* Quiet Hours */}
               <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="space-y-0.5">
+                <div className="flex items-center justify-between gap-4">
+                  <div className="space-y-0.5 min-w-0">
                     <Label className="flex items-center gap-2">
                       <Moon className="h-4 w-4" />
                       Quiet Hours
@@ -695,42 +711,27 @@ const Settings = () => {
                       Pause notifications during sleep or focus time
                     </p>
                   </div>
-                  <Switch checked={quietHoursEnabled} onCheckedChange={setQuietHoursEnabled} />
+                  <Switch checked={quietHoursEnabled} onCheckedChange={setQuietHoursEnabled} className="shrink-0" />
                 </div>
                 
                 {quietHoursEnabled && (
-                  <div className="ml-4 pl-4 border-l-2 border-border flex items-center gap-3">
+                  <div className="ml-4 pl-4 border-l-2 border-border flex flex-wrap items-end gap-3">
                     <div>
                       <Label className="text-xs">Start</Label>
-                      <Select value={quietHoursStart} onValueChange={setQuietHoursStart}>
-                        <SelectTrigger className="w-24 mt-1">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="20:00">8:00 PM</SelectItem>
-                          <SelectItem value="21:00">9:00 PM</SelectItem>
-                          <SelectItem value="22:00">10:00 PM</SelectItem>
-                          <SelectItem value="23:00">11:00 PM</SelectItem>
-                          <SelectItem value="00:00">12:00 AM</SelectItem>
-                        </SelectContent>
-                      </Select>
+                      <TimePickerWheel
+                        value={quietHoursStart}
+                        onChange={setQuietHoursStart}
+                        className="w-32 mt-1"
+                      />
                     </div>
-                    <span className="text-muted-foreground mt-5">to</span>
+                    <span className="text-muted-foreground pb-2">to</span>
                     <div>
                       <Label className="text-xs">End</Label>
-                      <Select value={quietHoursEnd} onValueChange={setQuietHoursEnd}>
-                        <SelectTrigger className="w-24 mt-1">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="05:00">5:00 AM</SelectItem>
-                          <SelectItem value="06:00">6:00 AM</SelectItem>
-                          <SelectItem value="07:00">7:00 AM</SelectItem>
-                          <SelectItem value="08:00">8:00 AM</SelectItem>
-                          <SelectItem value="09:00">9:00 AM</SelectItem>
-                          <SelectItem value="10:00">10:00 AM</SelectItem>
-                        </SelectContent>
-                      </Select>
+                      <TimePickerWheel
+                        value={quietHoursEnd}
+                        onChange={setQuietHoursEnd}
+                        className="w-32 mt-1"
+                      />
                     </div>
                   </div>
                 )}
@@ -741,8 +742,8 @@ const Settings = () => {
 
             {/* Push Notifications Toggle */}
             <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <div className="space-y-0.5">
+              <div className="flex items-center justify-between gap-4">
+                <div className="space-y-0.5 min-w-0">
                   <Label className="flex items-center gap-2">
                     {t("settings.pushNotifications")}
                     {isSubscribed && <CheckCircle2 className="h-4 w-4 text-primary" />}
@@ -757,6 +758,7 @@ const Settings = () => {
                   checked={isSubscribed} 
                   onCheckedChange={handlePushToggle}
                   disabled={!isSupported || pushLoading}
+                  className="shrink-0"
                 />
               </div>
               
@@ -793,6 +795,8 @@ const Settings = () => {
                 </div>
               )}
             </div>
+
+            <Separator />
 
             <Button 
               onClick={handleSaveNotificationPrefs} 

@@ -42,17 +42,18 @@ async function hkdf(
   info: Uint8Array,
   length: number,
 ): Promise<Uint8Array> {
+  const saltBuffer = salt.length ? salt.buffer.slice(salt.byteOffset, salt.byteOffset + salt.byteLength) : new ArrayBuffer(32);
   const prk = new Uint8Array(
     await crypto.subtle.sign(
       "HMAC",
       await crypto.subtle.importKey(
         "raw",
-        salt.length ? salt : new Uint8Array(32),
+        saltBuffer,
         { name: "HMAC", hash: "SHA-256" },
         false,
         ["sign"],
       ),
-      ikm,
+      ikm as unknown as BufferSource,
     ),
   );
 
@@ -127,7 +128,7 @@ async function encryptPayload(
 
   const clientPublicKey = await crypto.subtle.importKey(
     "raw",
-    clientPublicKeyBytes,
+    clientPublicKeyBytes as unknown as BufferSource,
     { name: "ECDH", namedCurve: "P-256" },
     true,
     [],
@@ -171,14 +172,14 @@ async function encryptPayload(
 
   const aesKey = await crypto.subtle.importKey(
     "raw",
-    contentEncryptionKey,
+    contentEncryptionKey as unknown as BufferSource,
     { name: "AES-GCM" },
     false,
     ["encrypt"],
   );
 
   const encrypted = new Uint8Array(
-    await crypto.subtle.encrypt({ name: "AES-GCM", iv: nonce }, aesKey, paddedPayload),
+    await crypto.subtle.encrypt({ name: "AES-GCM", iv: nonce as unknown as BufferSource }, aesKey, paddedPayload as unknown as BufferSource),
   );
 
   const recordSize = new DataView(new ArrayBuffer(4));
@@ -243,7 +244,7 @@ export async function sendWebPush(
       "Content-Type": "application/octet-stream",
       "Content-Length": String(ciphertext.length),
     },
-    body: ciphertext,
+    body: ciphertext as unknown as BodyInit,
   });
 
   const responseBody = await response.text();

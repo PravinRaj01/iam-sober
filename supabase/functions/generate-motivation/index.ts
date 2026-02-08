@@ -126,7 +126,7 @@ serve(async (req) => {
             let generated = generatedText.replace(/^["']|["']$/g, '');
             if (generated.length > 20 && generated.length < 200) {
               message = generated;
-              if (!/[.!?]$/.test(message)) message += '.';
+              if (message && !/[.!?]$/.test(message)) message += '.';
               modelUsed = "gemini-2.5-flash-lite";
             } else {
               const firstSentence = generated.split(/[.!?]/)[0];
