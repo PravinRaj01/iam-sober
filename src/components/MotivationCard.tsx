@@ -5,8 +5,11 @@ import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { supabase } from "@/integrations/supabase/client";
 import { getAddictionContent } from "@/utils/addictionContent";
+import { useLanguage } from "@/contexts/LanguageContext";
 
 const MotivationCard = () => {
+  const { t } = useLanguage();
+
   const { data: profile } = useQuery({
     queryKey: ["profile-addiction"],
     queryFn: async () => {
@@ -29,7 +32,7 @@ const MotivationCard = () => {
     queryFn: async () => {
       try {
         const { data, error } = await supabase.functions.invoke("generate-motivation", {
-          body: { timestamp: Date.now() } // Force new generation each time
+          body: { timestamp: Date.now() }
         });
         
         if (error) {
@@ -44,7 +47,6 @@ const MotivationCard = () => {
         };
       } catch (error: any) {
         console.error("AI motivation failed, using fallback:", error);
-        // Fallback to static quotes if AI fails
         const content = getAddictionContent(profile?.addiction_type || null);
         const quotes = content.quotes;
         return {
@@ -55,8 +57,8 @@ const MotivationCard = () => {
       }
     },
     retry: 1,
-    gcTime: 0, // Don't cache
-    staleTime: 0, // Always consider stale
+    gcTime: 0,
+    staleTime: 0,
   });
 
   if (error && !motivationData) {
@@ -64,9 +66,9 @@ const MotivationCard = () => {
       <Card className="p-6 border-destructive/50">
         <Alert variant="destructive">
           <AlertCircle className="h-4 w-4" />
-          <AlertTitle>AI Unavailable</AlertTitle>
+          <AlertTitle>{t("motivation.unavailable")}</AlertTitle>
           <AlertDescription>
-            Unable to generate AI motivation. Please try again later.
+            {t("motivation.unavailableDesc")}
             <Button 
               variant="outline" 
               size="sm" 
@@ -74,7 +76,7 @@ const MotivationCard = () => {
               className="mt-2 w-full"
             >
               <RefreshCw className="h-4 w-4 mr-2" />
-              Try Again
+              {t("motivation.tryAgain")}
             </Button>
           </AlertDescription>
         </Alert>
@@ -88,16 +90,16 @@ const MotivationCard = () => {
         <Lightbulb className="h-6 w-6 text-primary mt-1 shrink-0" />
         <div className="space-y-2 flex-1">
           <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
-            AI-Powered Motivation
+            {t("motivation.title")}
           </h3>
           {isLoading ? (
-            <p className="text-foreground italic text-lg animate-pulse">Generating inspiration...</p>
+            <p className="text-foreground italic text-lg animate-pulse">{t("motivation.generating")}</p>
           ) : (
             <>
               <p className="text-foreground italic text-lg">{motivationData?.message}</p>
               {motivationData?.timestamp && (
                 <p className="text-xs text-muted-foreground mt-1">
-                  {motivationData.fromAI ? "AI Generated" : "Inspiration"} • {new Date(motivationData.timestamp).toLocaleTimeString()}
+                  {motivationData.fromAI ? t("motivation.aiGenerated") : t("motivation.inspiration")} • {new Date(motivationData.timestamp).toLocaleTimeString()}
                 </p>
               )}
             </>
@@ -110,7 +112,7 @@ const MotivationCard = () => {
             disabled={isLoading}
           >
             <RefreshCw className={`h-4 w-4 mr-2 ${isLoading ? "animate-spin" : ""}`} />
-            Generate New
+            {t("motivation.generateNew")}
           </Button>
         </div>
       </div>

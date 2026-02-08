@@ -1,5 +1,4 @@
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Maximize2, X, Send, Loader2 } from "lucide-react";
 import ChatMessage from "./ChatMessage";
 import QuickActions from "./QuickActions";
@@ -7,6 +6,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import StorageImage from "@/components/StorageImage";
 import { Bot, Sparkles } from "lucide-react";
 import { CardHeader, CardContent } from "@/components/ui/card";
+import { useLanguage } from "@/contexts/LanguageContext";
 
 interface ChatbotMiniViewProps {
   messages: any[];
@@ -31,7 +31,7 @@ const ChatbotMiniView = ({
   onQuickAction,
   onClose,
 }: ChatbotMiniViewProps) => {
-  // Show more messages for scrolling
+  const { t } = useLanguage();
   const displayMessages = messages || [];
 
   const TypingIndicator = () => (
@@ -77,10 +77,10 @@ const ChatbotMiniView = ({
             </Avatar>
             <div>
               <div className="flex items-center gap-1">
-                <p className="text-sm font-semibold">AI Coach</p>
+                <p className="text-sm font-semibold">{t("chatbot.title")}</p>
                 <Sparkles className="h-3 w-3 text-primary animate-pulse" />
               </div>
-              <p className="text-xs text-muted-foreground">Always here to help</p>
+              <p className="text-xs text-muted-foreground">{t("chatbot.subtitle")}</p>
             </div>
           </div>
           <div className="flex items-center gap-1">
@@ -107,7 +107,6 @@ const ChatbotMiniView = ({
       </CardHeader>
 
       <CardContent className="flex flex-col h-[calc(100%-5rem)] pt-0 overflow-hidden">
-        {/* Message Area - Scrollable */}
         <div className="flex-1 min-h-0 overflow-y-auto mb-2 pr-1 scrollbar-thin scrollbar-thumb-primary/20 scrollbar-track-transparent">
           <div className="space-y-2 py-1">
             {displayMessages.length === 0 ? (
@@ -126,8 +125,8 @@ const ChatbotMiniView = ({
                   />
                 </Avatar>
                 <div className="text-center">
-                  <p className="text-sm font-semibold mb-1">Hi there! 👋</p>
-                  <p className="text-xs text-muted-foreground">How can I support you?</p>
+                  <p className="text-sm font-semibold mb-1">{t("chatbot.welcome")}</p>
+                  <p className="text-xs text-muted-foreground">{t("chatbot.welcomeQuestion")}</p>
                 </div>
               </div>
             ) : (
@@ -150,14 +149,12 @@ const ChatbotMiniView = ({
 
         {streaming && !streamingMessage && <TypingIndicator />}
 
-        {/* Quick Actions */}
         {messages && messages.length > 0 && (
           <div className="border-t border-primary/10 pt-2 pb-2">
             <QuickActions onAction={onQuickAction} compact />
           </div>
         )}
 
-        {/* Input Area */}
         <div className="pt-2 border-t border-primary/10">
           <form
             onSubmit={(e) => {
@@ -180,7 +177,7 @@ const ChatbotMiniView = ({
                 target.style.height = 'auto';
                 target.style.height = Math.min(target.scrollHeight, 80) + 'px';
               }}
-              placeholder="Ask me anything..."
+              placeholder={t("chatbot.placeholder")}
               disabled={streaming}
               rows={1}
               className="flex-1 rounded-md border border-primary/20 bg-background/50 px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 transition-colors resize-none overflow-hidden"

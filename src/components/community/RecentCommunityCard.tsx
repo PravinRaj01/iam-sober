@@ -5,9 +5,11 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { formatDistanceToNow } from "date-fns";
 import { useNavigate } from "react-router-dom";
+import { useLanguage } from "@/contexts/LanguageContext";
 
 const RecentCommunityCard = () => {
   const navigate = useNavigate();
+  const { t } = useLanguage();
 
   const { data: recentMilestones } = useQuery({
     queryKey: ["recent-community"],
@@ -41,7 +43,7 @@ const RecentCommunityCard = () => {
         <div className="flex items-center justify-between gap-2">
           <CardTitle className="flex items-center gap-2 min-w-0 flex-1">
             <Users className="h-5 w-5 text-primary shrink-0" />
-            <span className="truncate">Community Milestones</span>
+            <span className="truncate">{t("communityCard.title")}</span>
           </CardTitle>
           <Button
             variant="ghost"
@@ -49,7 +51,7 @@ const RecentCommunityCard = () => {
             onClick={() => navigate("/community")}
             className="text-primary shrink-0 gap-1"
           >
-            <span className="hidden sm:inline">View All</span>
+            <span className="hidden sm:inline">{t("communityCard.viewAll")}</span>
             <ArrowRight className="h-4 w-4" />
           </Button>
         </div>
@@ -65,7 +67,7 @@ const RecentCommunityCard = () => {
             </div>
             <div className="flex-1 min-w-0 overflow-hidden">
               <p className="text-sm font-medium truncate">
-                {milestone.anonymous ? "Anonymous" : (milestone.public_profiles?.pseudonym || "Community Member")}
+                {milestone.anonymous ? t("communityCard.anonymous") : (milestone.public_profiles?.pseudonym || t("communityCard.member"))}
               </p>
               <p className="text-xs text-muted-foreground line-clamp-2 break-words">
                 {milestone.message}

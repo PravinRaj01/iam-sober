@@ -1,5 +1,6 @@
 import { Button } from "@/components/ui/button";
 import { TrendingUp, BookOpen, Target, AlertCircle, PartyPopper } from "lucide-react";
+import { useLanguage } from "@/contexts/LanguageContext";
 
 interface QuickActionsProps {
   onAction: (message: string) => void;
@@ -7,31 +8,33 @@ interface QuickActionsProps {
 }
 
 const QuickActions = ({ onAction, compact }: QuickActionsProps) => {
+  const { t } = useLanguage();
+
   const actions = [
     {
       icon: TrendingUp,
-      label: "How am I doing?",
-      message: "Can you analyze my overall progress and give me insights?",
+      label: t("chatbot.qa.howAmIDoing"),
+      message: t("chatbot.qa.howAmIDoingMsg"),
     },
     {
       icon: BookOpen,
-      label: "Journal insights",
-      message: "What patterns do you see in my recent journal entries?",
+      label: t("chatbot.qa.journalInsights"),
+      message: t("chatbot.qa.journalInsightsMsg"),
     },
     {
       icon: Target,
-      label: "Set a goal",
-      message: "Help me create a meaningful recovery goal based on my progress",
+      label: t("chatbot.qa.setGoal"),
+      message: t("chatbot.qa.setGoalMsg"),
     },
     {
       icon: AlertCircle,
-      label: "I'm struggling",
-      message: "I'm having a difficult moment right now. Can you suggest some coping strategies?",
+      label: t("chatbot.qa.struggling"),
+      message: t("chatbot.qa.strugglingMsg"),
     },
     {
       icon: PartyPopper,
-      label: "Celebrate wins",
-      message: "Let's celebrate my achievements! What milestones have I reached?",
+      label: t("chatbot.qa.celebrateWins"),
+      message: t("chatbot.qa.celebrateWinsMsg"),
     },
   ];
 
