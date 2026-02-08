@@ -1,6 +1,5 @@
 import { useRef, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { CardHeader, CardContent } from "@/components/ui/card";
 import { Loader2, Send, Sparkles, Minimize2, X, Maximize2, Plus, Trash2, MessageSquare, ChevronDown, Mic, MicOff } from "lucide-react";
@@ -12,6 +11,7 @@ import { Bot } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useQueryClient } from "@tanstack/react-query";
 import { useVoiceRecording } from "@/hooks/useVoiceRecording";
+import { useLanguage } from "@/contexts/LanguageContext";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -74,12 +74,12 @@ const ChatbotFullView = ({
   onClearChat,
   onConversationTitleChange,
 }: ChatbotFullViewProps) => {
+  const { t } = useLanguage();
   const scrollRef = useRef<HTMLDivElement>(null);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [conversationToDelete, setConversationToDelete] = useState<string | null>(null);
   const queryClient = useQueryClient();
 
-  // Voice recording
   const handleTranscription = (text: string) => {
     onInputChange(text);
   };
@@ -125,7 +125,6 @@ const ChatbotFullView = ({
 
   return (
     <div className="flex flex-col h-full">
-      {/* Conversation Management */}
       {conversations.length > 0 && (
         <div className="px-4 pt-4 pb-2 border-b border-primary/10 flex items-center justify-between gap-2">
           <div className="flex items-center gap-2 flex-1 min-w-0">
@@ -140,7 +139,7 @@ const ChatbotFullView = ({
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start" className="w-[300px] max-h-[400px] overflow-y-auto bg-card/95 backdrop-blur-lg border-primary/20 z-[110]">
-                <DropdownMenuLabel>Conversations</DropdownMenuLabel>
+                <DropdownMenuLabel>{t("chatbot.conversations")}</DropdownMenuLabel>
                 <DropdownMenuSeparator />
                 {conversations.map((conv) => (
                   <div key={conv.id} className="flex items-center group pr-2">
@@ -207,7 +206,7 @@ const ChatbotFullView = ({
             className="h-9 shrink-0"
           >
             <Plus className="h-4 w-4 mr-1" />
-            New
+            {t("chatbot.new")}
           </Button>
         </div>
       )}
@@ -215,13 +214,13 @@ const ChatbotFullView = ({
       <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete Conversation?</AlertDialogTitle>
+            <AlertDialogTitle>{t("chatbot.deleteTitle")}</AlertDialogTitle>
             <AlertDialogDescription>
-              This will permanently delete this conversation and all its messages. This action cannot be undone.
+              {t("chatbot.deleteDesc")}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
             <AlertDialogAction
               onClick={() => {
                 if (conversationToDelete) {
@@ -232,7 +231,7 @@ const ChatbotFullView = ({
               }}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              Delete
+              {t("common.delete")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -256,10 +255,10 @@ const ChatbotFullView = ({
             </Avatar>
             <div>
               <div className="flex items-center gap-2">
-                <p className="text-lg font-semibold">AI Coach</p>
+                <p className="text-lg font-semibold">{t("chatbot.title")}</p>
                 <Sparkles className="h-4 w-4 text-primary animate-pulse" />
               </div>
-              <p className="text-xs text-muted-foreground">Always here to support you</p>
+              <p className="text-xs text-muted-foreground">{t("chatbot.subtitle")}</p>
             </div>
           </div>
           <div className="flex gap-1">
@@ -268,7 +267,7 @@ const ChatbotFullView = ({
               size="icon"
               onClick={onClearChat}
               className="h-8 w-8 hover:bg-destructive/10 hover:text-destructive"
-              title="Clear chat"
+              title={t("chatbot.title")}
             >
               <Trash2 className="h-4 w-4" />
             </Button>
@@ -278,7 +277,7 @@ const ChatbotFullView = ({
                 size="icon"
                 onClick={onExpandToFull}
                 className="h-8 w-8 hover:bg-primary/10"
-                title="Open AI Coach"
+                title={t("chatbot.title")}
               >
                 <Maximize2 className="h-4 w-4" />
               </Button>
@@ -308,7 +307,6 @@ const ChatbotFullView = ({
       </CardHeader>
 
       <CardContent className="flex-1 pt-4 overflow-hidden">
-        {/* Messages Area */}
         <ScrollArea className="h-full pr-4">
           <div className="space-y-4">
             {isLoading ? (
@@ -317,7 +315,7 @@ const ChatbotFullView = ({
                   <Loader2 className="h-12 w-12 animate-spin text-primary" />
                   <Sparkles className="h-5 w-5 text-primary absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 animate-pulse" />
                 </div>
-                <p className="text-sm text-muted-foreground">Connecting to your coach...</p>
+                <p className="text-sm text-muted-foreground">{t("chatbot.connecting")}</p>
               </div>
             ) : messages?.length === 0 ? (
               <div className="text-center py-8 space-y-6">
@@ -336,9 +334,9 @@ const ChatbotFullView = ({
                     />
                   </Avatar>
                   <div>
-                    <h3 className="text-lg font-semibold mb-1">Welcome! 👋</h3>
+                    <h3 className="text-lg font-semibold mb-1">{t("chatbot.welcomeFull")}</h3>
                     <p className="text-muted-foreground text-sm">
-                      I'm your AI recovery coach, here 24/7 to support your journey.
+                      {t("chatbot.welcomeFullDesc")}
                     </p>
                   </div>
                 </div>
@@ -352,7 +350,7 @@ const ChatbotFullView = ({
                 {streaming && (
                   <ChatMessage
                     role="assistant"
-                    content={streamingMessage || "Thinking..."}
+                    content={streamingMessage || t("chatbot.thinking")}
                     isStreaming
                   />
                 )}
@@ -388,7 +386,7 @@ const ChatbotFullView = ({
                   target.style.height = 'auto';
                   target.style.height = Math.min(target.scrollHeight, 120) + 'px';
                 }}
-                placeholder={isRecording ? "Listening..." : isProcessing ? "Processing..." : "Ask me anything..."}
+                placeholder={isRecording ? t("chatbot.listening") : isProcessing ? t("chatbot.processing") : t("chatbot.placeholder")}
                 disabled={streaming || isRecording || isProcessing}
                 rows={1}
                 className="flex w-full rounded-md border border-primary/20 bg-background/50 px-3 py-2.5 text-base ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 transition-colors resize-none overflow-hidden"
@@ -396,7 +394,6 @@ const ChatbotFullView = ({
               />
             </div>
             
-            {/* Voice Recording Button */}
             <Button
               type="button"
               onClick={handleVoiceToggle}
@@ -404,7 +401,7 @@ const ChatbotFullView = ({
               size="icon"
               variant={isRecording ? "destructive" : "outline"}
               className={`h-11 w-11 shrink-0 ${isRecording ? 'animate-pulse' : ''}`}
-              title={isRecording ? "Stop recording" : "Voice input"}
+              title={isRecording ? t("chatbot.listening") : t("chatbot.placeholder")}
             >
               {isProcessing ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -415,7 +412,6 @@ const ChatbotFullView = ({
               )}
             </Button>
             
-            {/* Send Button */}
             <Button
               type="submit"
               disabled={!input.trim() || streaming}
@@ -431,7 +427,7 @@ const ChatbotFullView = ({
           </div>
         </form>
         <p className="text-xs text-muted-foreground text-center mt-2">
-          Powered by AI • Tap mic for voice input
+          {t("chatbot.poweredBy")}
         </p>
       </div>
     </div>

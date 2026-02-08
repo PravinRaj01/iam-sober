@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { ChatbotState } from "./ChatbotDrawer";
+import { useLanguage } from "@/contexts/LanguageContext";
 
 interface ChatbotButtonProps {
   onClick: () => void;
@@ -11,6 +12,7 @@ interface ChatbotButtonProps {
 }
 
 const ChatbotButton = ({ onClick, unreadCount = 0, state }: ChatbotButtonProps) => {
+  const { t } = useLanguage();
   const isClosed = state === 'closed';
 
   return (
@@ -23,7 +25,7 @@ const ChatbotButton = ({ onClick, unreadCount = 0, state }: ChatbotButtonProps) 
           ? "bg-gradient-primary hover:scale-110 shadow-glow"
           : "bg-card/80 backdrop-blur-sm border-2 border-primary/20 hover:border-primary/40 scale-95"
       )}
-      aria-label="Open AI Coach"
+      aria-label={t("chatbot.title")}
     >
       {isClosed ? (
         <MessageCircle className="h-6 w-6" />

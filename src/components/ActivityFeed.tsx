@@ -4,8 +4,11 @@ import { CommunityMilestone } from "./CommunityMilestone";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { formatDistanceToNow, differenceInDays } from "date-fns";
+import { useLanguage } from "@/contexts/LanguageContext";
 
 const ActivityFeed = () => {
+  const { t } = useLanguage();
+
   const { data: activities, isLoading } = useQuery({
     queryKey: ["activity-feed"],
     queryFn: async () => {
@@ -40,7 +43,7 @@ const ActivityFeed = () => {
           activityList.push({
             type: "milestone",
             icon: Trophy,
-            message: `${latestMilestone}-day milestone achieved!`,
+            message: `${latestMilestone}-${t("checkIn.days")} ${t("activity.milestone")}`,
             time: "Recently",
             color: "text-success",
             timestamp: new Date(),
@@ -60,7 +63,7 @@ const ActivityFeed = () => {
         activityList.push({
           type: "checkin",
           icon: Heart,
-          message: "Completed daily check-in",
+          message: t("activity.checkIn"),
           time: formatDistanceToNow(new Date(checkIns[0].created_at), { addSuffix: true }),
           color: "text-primary",
           timestamp: new Date(checkIns[0].created_at),
@@ -79,7 +82,7 @@ const ActivityFeed = () => {
         activityList.push({
           type: "journal",
           icon: BookOpen,
-          message: "Added new journal entry",
+          message: t("activity.journal"),
           time: formatDistanceToNow(new Date(journalEntries[0].created_at), { addSuffix: true }),
           color: "text-accent",
           timestamp: new Date(journalEntries[0].created_at),
@@ -107,20 +110,20 @@ const ActivityFeed = () => {
             activityList.push({
               type: "community_milestone",
               icon: Users,
-              message: interaction.message || "Milestone achieved!",
-              time: formatDistanceToNow(new Date(interaction.created_at), { addSuffix: true }),
+              message: interaction.message || t("activity.milestone"),
+              time: formatDistanceToNow(new Date(interaction.created_at!), { addSuffix: true }),
               color: "text-success",
-              timestamp: new Date(interaction.created_at),
-              anonymous: interaction.anonymous,
+              timestamp: new Date(interaction.created_at!),
+              anonymous: interaction.anonymous ?? undefined,
             });
           } else if (interaction.type === "support_given" || interaction.type === "support_received") {
             activityList.push({
               type: "community_support",
               icon: MessageSquare,
               message: interaction.message || "Community support",
-              time: formatDistanceToNow(new Date(interaction.created_at), { addSuffix: true }),
+              time: formatDistanceToNow(new Date(interaction.created_at!), { addSuffix: true }),
               color: "text-primary",
-              timestamp: new Date(interaction.created_at),
+              timestamp: new Date(interaction.created_at!),
             });
           }
         });
@@ -130,7 +133,7 @@ const ActivityFeed = () => {
         activityList.push({
           type: "goal",
           icon: Target,
-          message: goals[0].completed ? "Goal completed!" : "Goal progress updated",
+          message: goals[0].completed ? t("activity.goalComplete") : t("activity.goalProgress"),
           time: formatDistanceToNow(new Date(goals[0].created_at), { addSuffix: true }),
           color: "text-warning",
           timestamp: new Date(goals[0].created_at),
@@ -149,14 +152,13 @@ const ActivityFeed = () => {
         activityList.push({
           type: "relapse",
           icon: AlertCircle,
-          message: "Recorded relapse - back on track",
+          message: t("activity.relapse"),
           time: formatDistanceToNow(new Date(relapses[0].relapse_date), { addSuffix: true }),
           color: "text-destructive",
           timestamp: new Date(relapses[0].relapse_date),
         });
       }
 
-      // Sort by most recent
       return activityList.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime()).slice(0, 5);
     },
   });
@@ -164,16 +166,16 @@ const ActivityFeed = () => {
   return (
     <Card className="p-4 bg-card/60 backdrop-blur-xl border-border/40">
       <h3 className="text-sm font-semibold mb-4 text-muted-foreground uppercase tracking-wide">
-        Activity
+        {t("activity.title")}
       </h3>
       {isLoading ? (
         <div className="flex items-center justify-center py-8">
-          <div className="animate-pulse text-muted-foreground text-sm">Loading...</div>
+          <div className="animate-pulse text-muted-foreground text-sm">{t("activity.loading")}</div>
         </div>
       ) : !activities || activities.length === 0 ? (
         <div className="text-center py-8 text-muted-foreground text-sm">
-          <p>No recent activity</p>
-          <p className="text-xs mt-1">Start by logging a check-in!</p>
+          <p>{t("activity.noActivity")}</p>
+          <p className="text-xs mt-1">{t("activity.startCheckin")}</p>
         </div>
       ) : (
         <div className="space-y-4">

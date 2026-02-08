@@ -4,10 +4,10 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { BarChart2, TrendingUp, TrendingDown, Minus, RefreshCw } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
-import { useToast } from "@/hooks/use-toast";
+import { useLanguage } from "@/contexts/LanguageContext";
 
 export const WeeklyPatternsCard = () => {
-  const { toast } = useToast();
+  const { t } = useLanguage();
 
   const { data: insights, refetch, isLoading } = useQuery({
     queryKey: ["mood-patterns"],
@@ -41,7 +41,7 @@ export const WeeklyPatternsCard = () => {
       <div className="flex items-start justify-between mb-4">
         <div className="flex items-center gap-2">
           <BarChart2 className="h-5 w-5 text-primary" />
-          <h3 className="font-semibold">Weekly Patterns</h3>
+          <h3 className="font-semibold">{t("patterns.title")}</h3>
         </div>
         <Button
           variant="ghost"
@@ -70,21 +70,21 @@ export const WeeklyPatternsCard = () => {
 
           {insights.avgUrge && (
             <div className="flex items-center justify-between pt-2 border-t border-border/50">
-              <span className="text-xs text-muted-foreground">Avg. Urge Intensity</span>
+              <span className="text-xs text-muted-foreground">{t("patterns.avgUrge")}</span>
               <span className="text-sm font-semibold">{insights.avgUrge}/10</span>
             </div>
           )}
 
           {insights.totalCheckIns && (
             <div className="flex items-center justify-between">
-              <span className="text-xs text-muted-foreground">Check-ins (7 days)</span>
+              <span className="text-xs text-muted-foreground">{t("patterns.checkIns7d")}</span>
               <span className="text-sm font-semibold">{insights.totalCheckIns}</span>
             </div>
           )}
         </div>
       ) : (
         <p className="text-sm text-muted-foreground">
-          {isLoading ? "Analyzing your patterns..." : "Start logging check-ins to see your weekly patterns!"}
+          {isLoading ? t("patterns.analyzing") : t("patterns.startLogging")}
         </p>
       )}
     </Card>

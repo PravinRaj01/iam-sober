@@ -2,15 +2,17 @@ import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Heart, BookOpen, Target, Activity } from "lucide-react";
+import { useLanguage } from "@/contexts/LanguageContext";
 
 const QuickActions = () => {
   const navigate = useNavigate();
+  const { t } = useLanguage();
 
   const actions = [
-    { label: "Check In", icon: Heart, path: "/check-in", gradient: "bg-gradient-primary" },
-    { label: "Journal", icon: BookOpen, path: "/journal", gradient: "bg-gradient-success" },
-    { label: "Goals", icon: Target, path: "/goals", gradient: "bg-accent" },
-    { label: "Coping Tools", icon: Activity, path: "/coping", gradient: "bg-warning" },
+    { label: t("nav.checkIn"), icon: Heart, path: "/check-in", gradient: "bg-gradient-primary" },
+    { label: t("nav.journal"), icon: BookOpen, path: "/journal", gradient: "bg-gradient-success" },
+    { label: t("nav.goals"), icon: Target, path: "/goals", gradient: "bg-accent" },
+    { label: t("nav.copingTools"), icon: Activity, path: "/coping", gradient: "bg-warning" },
   ];
 
   return (
