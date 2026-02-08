@@ -18,13 +18,13 @@ const urlBase64ToUint8Array = (base64String: string): Uint8Array => {
 
 /**
  * Remove any stale /sw-push.js registrations left over from previous attempts.
- * Only the main PWA worker (/sw.js) should be registered.
  */
 const cleanupStaleWorkers = async () => {
   try {
     const registrations = await navigator.serviceWorker.getRegistrations();
     for (const reg of registrations) {
-      if (reg.active?.scriptURL?.includes('sw-push.js')) {
+      const scriptURL = reg.active?.scriptURL || reg.installing?.scriptURL || reg.waiting?.scriptURL || '';
+      if (scriptURL.includes('sw-push.js')) {
         console.log('[Push] Unregistering stale sw-push.js worker');
         await reg.unregister();
       }
@@ -35,8 +35,24 @@ const cleanupStaleWorkers = async () => {
 };
 
 /**
+ * navigator.serviceWorker.ready NEVER rejects. If the SW registration failed,
+ * it hangs forever. This wrapper adds a timeout so we can fall back to manual registration.
+ */
+const waitForServiceWorkerReady = (timeoutMs = 5000): Promise<ServiceWorkerRegistration> => {
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      reject(new Error('Service worker ready timed out'));
+    }, timeoutMs);
+
+    navigator.serviceWorker.ready.then((reg) => {
+      clearTimeout(timeout);
+      resolve(reg);
+    });
+  });
+};
+
+/**
  * Wait until the service worker registration has an active (activated) worker.
- * navigator.serviceWorker.ready can resolve before the worker is fully activated.
  */
 const waitForActivation = (registration: ServiceWorkerRegistration): Promise<ServiceWorkerRegistration> => {
   return new Promise((resolve, reject) => {
@@ -63,6 +79,26 @@ const waitForActivation = (registration: ServiceWorkerRegistration): Promise<Ser
   });
 };
 
+/**
+ * Get a service worker registration, with fallback to manual registration.
+ * 1. Try navigator.serviceWorker.ready (with timeout)
+ * 2. If that fails, manually register /sw.js
+ */
+const getServiceWorkerRegistration = async (): Promise<ServiceWorkerRegistration> => {
+  try {
+    const registration = await waitForServiceWorkerReady(5000);
+    console.log('[Push] SW ready via auto-registration, scope:', registration.scope);
+    return registration;
+  } catch {
+    console.log('[Push] SW not ready (auto-registration likely failed), attempting manual registration...');
+    const registration = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
+    console.log('[Push] Manual registration succeeded, waiting for activation...');
+    await waitForActivation(registration);
+    console.log('[Push] Manual SW activated');
+    return registration;
+  }
+};
+
 export const usePushNotifications = () => {
   const [isSupported, setIsSupported] = useState(false);
   const [isSubscribed, setIsSubscribed] = useState(false);
@@ -80,18 +116,17 @@ export const usePushNotifications = () => {
         return;
       }
 
-      // Clean up any stale sw-push.js registrations from previous attempts
       await cleanupStaleWorkers();
 
-      // Check if already subscribed via the PWA service worker
+      // Check existing subscription — use timeout so we don't hang if SW never registers
       try {
-        const registration = await navigator.serviceWorker.ready;
-        console.log('[Push] PWA SW ready, scope:', registration.scope);
+        const registration = await waitForServiceWorkerReady(3000);
         const subscription = await registration.pushManager.getSubscription();
         setIsSubscribed(!!subscription);
         console.log('[Push] Existing subscription:', !!subscription);
-      } catch (error) {
-        console.error('[Push] Error checking subscription:', error);
+      } catch {
+        // SW not ready yet — that's fine on init, don't block the UI
+        console.log('[Push] SW not ready on init, skipping subscription check');
       }
     };
 
@@ -140,9 +175,9 @@ export const usePushNotifications = () => {
       console.log('[Push] Step 3: Cleaning up stale workers...');
       await cleanupStaleWorkers();
 
-      // 4. Get the PWA service worker registration
-      console.log('[Push] Step 4: Getting PWA service worker...');
-      const registration = await navigator.serviceWorker.ready;
+      // 4. Get service worker (with timeout + manual fallback)
+      console.log('[Push] Step 4: Getting service worker...');
+      const registration = await getServiceWorkerRegistration();
       console.log('[Push] SW ready, scope:', registration.scope, 'active:', !!registration.active);
 
       // 5. Ensure the worker is fully activated
@@ -199,8 +234,11 @@ export const usePushNotifications = () => {
 
       let description = error.message || 'Failed to enable push notifications.';
 
-      // Provide specific error messages for common failures
-      if (error.message?.includes('push service')) {
+      if (error.name === 'AbortError') {
+        description = 'Service worker failed to register. Please refresh the page and try again.';
+      } else if (error.message?.includes('timed out')) {
+        description = 'Service worker is taking too long. Please reload the page and try again.';
+      } else if (error.message?.includes('push service')) {
         description = 'Push service error. Try clearing site data in browser settings and retry.';
       } else if (error.code === 11 || error.name === 'InvalidStateError') {
         description = 'Service worker not ready. Please refresh the page and try again.';
@@ -222,7 +260,7 @@ export const usePushNotifications = () => {
 
     try {
       console.log('[Push] Unsubscribing...');
-      const registration = await navigator.serviceWorker.ready;
+      const registration = await waitForServiceWorkerReady(5000);
       const subscription = await registration.pushManager.getSubscription();
 
       if (subscription) {
@@ -230,7 +268,6 @@ export const usePushNotifications = () => {
         console.log('[Push] Browser subscription removed');
       }
 
-      // Remove from database
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
         await supabase
