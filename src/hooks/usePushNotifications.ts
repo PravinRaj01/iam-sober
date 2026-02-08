@@ -17,26 +17,26 @@ const urlBase64ToUint8Array = (base64String: string): Uint8Array => {
 };
 
 /**
- * Remove any stale /sw-push.js registrations left over from previous attempts.
+ * Unregister ALL service workers. Used as a nuclear option before manual registration
+ * to clear any broken/stale workers blocking new registrations.
  */
-const cleanupStaleWorkers = async () => {
+const unregisterAllWorkers = async (): Promise<void> => {
   try {
     const registrations = await navigator.serviceWorker.getRegistrations();
+    console.log(`[Push] Found ${registrations.length} existing SW registration(s)`);
     for (const reg of registrations) {
-      const scriptURL = reg.active?.scriptURL || reg.installing?.scriptURL || reg.waiting?.scriptURL || '';
-      if (scriptURL.includes('sw-push.js')) {
-        console.log('[Push] Unregistering stale sw-push.js worker');
-        await reg.unregister();
-      }
+      const url = reg.active?.scriptURL || reg.installing?.scriptURL || reg.waiting?.scriptURL || 'unknown';
+      console.log('[Push] Unregistering:', url);
+      await reg.unregister();
     }
   } catch (err) {
-    console.warn('[Push] Error cleaning up stale workers:', err);
+    console.warn('[Push] Error unregistering workers:', err);
   }
 };
 
 /**
  * navigator.serviceWorker.ready NEVER rejects. If the SW registration failed,
- * it hangs forever. This wrapper adds a timeout so we can fall back to manual registration.
+ * it hangs forever. This wrapper adds a timeout.
  */
 const waitForServiceWorkerReady = (timeoutMs = 5000): Promise<ServiceWorkerRegistration> => {
   return new Promise((resolve, reject) => {
@@ -52,7 +52,7 @@ const waitForServiceWorkerReady = (timeoutMs = 5000): Promise<ServiceWorkerRegis
 };
 
 /**
- * Wait until the service worker registration has an active (activated) worker.
+ * Wait until the service worker is in the 'activated' state.
  */
 const waitForActivation = (registration: ServiceWorkerRegistration): Promise<ServiceWorkerRegistration> => {
   return new Promise((resolve, reject) => {
@@ -68,34 +68,67 @@ const waitForActivation = (registration: ServiceWorkerRegistration): Promise<Ser
     console.log('[Push] Waiting for SW activation, current state:', sw.state);
     const timeout = setTimeout(() => {
       reject(new Error('Service worker activation timed out'));
-    }, 10000);
+    }, 15000);
     sw.addEventListener('statechange', () => {
       console.log('[Push] SW state changed to:', sw.state);
       if (sw.state === 'activated') {
         clearTimeout(timeout);
         resolve(registration);
       }
+      if (sw.state === 'redundant') {
+        clearTimeout(timeout);
+        reject(new Error('Service worker became redundant'));
+      }
     });
   });
 };
 
 /**
- * Get a service worker registration, with fallback to manual registration.
- * 1. Try navigator.serviceWorker.ready (with timeout)
- * 2. If that fails, manually register /sw.js
+ * Get a working service worker registration with aggressive fallback:
+ * 1. Try navigator.serviceWorker.ready (VitePWA auto-registration) with 5s timeout
+ * 2. If that fails, unregister ALL workers, then manually register /sw.js fresh
+ * 3. If manual registration also fails (AbortError), wait 1s and retry once
  */
 const getServiceWorkerRegistration = async (): Promise<ServiceWorkerRegistration> => {
+  // Attempt 1: Check if VitePWA auto-registration already succeeded
   try {
     const registration = await waitForServiceWorkerReady(5000);
     console.log('[Push] SW ready via auto-registration, scope:', registration.scope);
     return registration;
-  } catch {
-    console.log('[Push] SW not ready (auto-registration likely failed), attempting manual registration...');
+  } catch (e) {
+    console.log('[Push] Auto-registration not ready:', (e as Error).message);
+  }
+
+  // Attempt 2: Nuclear cleanup + manual registration
+  console.log('[Push] Clearing all workers and registering fresh...');
+  await unregisterAllWorkers();
+  // Brief pause to let the browser finish unregistration
+  await new Promise(r => setTimeout(r, 500));
+
+  try {
     const registration = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
     console.log('[Push] Manual registration succeeded, waiting for activation...');
     await waitForActivation(registration);
     console.log('[Push] Manual SW activated');
     return registration;
+  } catch (firstError: any) {
+    console.warn('[Push] First manual registration failed:', firstError.name, firstError.message);
+
+    // Attempt 3: Retry once after a delay (AbortError can be transient)
+    if (firstError.name === 'AbortError') {
+      console.log('[Push] AbortError detected, retrying in 2 seconds...');
+      await new Promise(r => setTimeout(r, 2000));
+      await unregisterAllWorkers();
+      await new Promise(r => setTimeout(r, 500));
+
+      const registration = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
+      console.log('[Push] Retry registration succeeded, waiting for activation...');
+      await waitForActivation(registration);
+      console.log('[Push] Retry SW activated');
+      return registration;
+    }
+
+    throw firstError;
   }
 };
 
@@ -104,6 +137,7 @@ export const usePushNotifications = () => {
   const [isSubscribed, setIsSubscribed] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const vapidKeyRef = useRef<string | null>(null);
+  const subscribingRef = useRef(false); // Guard against concurrent calls
   const { toast } = useToast();
 
   // Check support and existing subscription on mount
@@ -116,16 +150,13 @@ export const usePushNotifications = () => {
         return;
       }
 
-      await cleanupStaleWorkers();
-
-      // Check existing subscription — use timeout so we don't hang if SW never registers
+      // Check existing subscription with timeout — don't block the UI
       try {
         const registration = await waitForServiceWorkerReady(3000);
         const subscription = await registration.pushManager.getSubscription();
         setIsSubscribed(!!subscription);
         console.log('[Push] Existing subscription:', !!subscription);
       } catch {
-        // SW not ready yet — that's fine on init, don't block the UI
         console.log('[Push] SW not ready on init, skipping subscription check');
       }
     };
@@ -134,6 +165,12 @@ export const usePushNotifications = () => {
   }, []);
 
   const subscribe = useCallback(async () => {
+    // Prevent double-invocation (React strict mode, double-clicks, etc.)
+    if (subscribingRef.current) {
+      console.log('[Push] Subscribe already in progress, ignoring duplicate call');
+      return false;
+    }
+
     if (!isSupported) {
       toast({
         title: 'Not supported',
@@ -143,6 +180,7 @@ export const usePushNotifications = () => {
       return false;
     }
 
+    subscribingRef.current = true;
     setIsLoading(true);
 
     try {
@@ -171,22 +209,13 @@ export const usePushNotifications = () => {
         return false;
       }
 
-      // 3. Clean up stale workers
-      console.log('[Push] Step 3: Cleaning up stale workers...');
-      await cleanupStaleWorkers();
-
-      // 4. Get service worker (with timeout + manual fallback)
-      console.log('[Push] Step 4: Getting service worker...');
+      // 3. Get service worker (with timeout, cleanup, manual fallback, and retry)
+      console.log('[Push] Step 3: Getting service worker...');
       const registration = await getServiceWorkerRegistration();
       console.log('[Push] SW ready, scope:', registration.scope, 'active:', !!registration.active);
 
-      // 5. Ensure the worker is fully activated
-      console.log('[Push] Step 5: Ensuring SW is activated...');
-      await waitForActivation(registration);
-      console.log('[Push] SW is activated');
-
-      // 6. Subscribe to push
-      console.log('[Push] Step 6: Subscribing to push...');
+      // 4. Subscribe to push
+      console.log('[Push] Step 4: Subscribing to push...');
       const applicationServerKey = urlBase64ToUint8Array(vapidKeyRef.current!);
       const subscription = await registration.pushManager.subscribe({
         userVisibleOnly: true,
@@ -194,8 +223,8 @@ export const usePushNotifications = () => {
       });
       console.log('[Push] Subscription created:', subscription.endpoint.substring(0, 50) + '...');
 
-      // 7. Save to Supabase
-      console.log('[Push] Step 7: Saving subscription to database...');
+      // 5. Save to Supabase
+      console.log('[Push] Step 5: Saving subscription to database...');
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
         throw new Error('Not authenticated');
@@ -235,9 +264,11 @@ export const usePushNotifications = () => {
       let description = error.message || 'Failed to enable push notifications.';
 
       if (error.name === 'AbortError') {
-        description = 'Service worker failed to register. Please refresh the page and try again.';
+        description = 'Service worker registration failed. Please clear your browser\'s site data (Settings → Privacy → Clear browsing data → choose this site), then reload and try again.';
       } else if (error.message?.includes('timed out')) {
         description = 'Service worker is taking too long. Please reload the page and try again.';
+      } else if (error.message?.includes('redundant')) {
+        description = 'Service worker was replaced. Please reload the page and try again.';
       } else if (error.message?.includes('push service')) {
         description = 'Push service error. Try clearing site data in browser settings and retry.';
       } else if (error.code === 11 || error.name === 'InvalidStateError') {
@@ -251,6 +282,7 @@ export const usePushNotifications = () => {
       });
       return false;
     } finally {
+      subscribingRef.current = false;
       setIsLoading(false);
     }
   }, [isSupported, toast]);
