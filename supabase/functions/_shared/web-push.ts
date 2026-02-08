@@ -249,6 +249,7 @@ export async function sendWebPush(
     headers: {
       "Authorization": authorization,
       "TTL": "86400",
+      "Urgency": "high",
       "Content-Encoding": "aes128gcm",
       "Content-Type": "application/octet-stream",
       "Content-Length": String(ciphertext.length),
