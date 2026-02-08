@@ -1,117 +1,96 @@
 
+# Fix Push Notifications: Handle Service Worker Registration Failures
 
-# Fix Push Notifications: Service Worker Conflict Resolution
+## Root Cause Analysis
 
-## Problem
+There are **two critical bugs** causing push notifications to fail:
 
-The app registers **two competing service workers** on the same scope (`/`):
-- VitePWA auto-generates and registers `/sw.js` at scope `/`
-- `usePushNotifications.ts` manually registers `/sw-push.js` also at scope `/`
+### Bug 1: `navigator.serviceWorker.ready` hangs forever
+The `navigator.serviceWorker.ready` promise **never rejects**. If the VitePWA auto-registration of `/sw.js` fails (which it does -- the `AbortError` in the console confirms this), the subscribe flow freezes permanently at Step 4 ("Getting PWA service worker..."). The user sees no error, no timeout -- it just hangs.
 
-Only one service worker can control a scope at a time. When the push hook tries to register `/sw-push.js`, it either fails or conflicts with the existing PWA worker, causing the `pushManager.subscribe()` call to fail with "push service error."
+### Bug 2: No fallback when auto-registration fails
+VitePWA's `injectRegister: 'auto'` generates registration code that runs automatically, but if it fails (due to stale workers, import failures, or hosting quirks), there is no retry or manual fallback. The hook just waits forever for a worker that will never come.
 
-The VAPID key endpoint is working correctly (confirmed via test call -- returns a valid key).
+### Bug 3: Stale worker cleanup is too narrow
+`cleanupStaleWorkers()` only removes workers with `sw-push.js` in the URL. Broken/stale main workers (previous versions of `sw.js`) are left in place and can block new registrations.
+
+The other errors in the console are unrelated:
+- `runtime.lastError` -- browser extension issue, not our code
+- `/api/v1/features/environment` 404 -- browser extension request
+- `background.jpg` 400 -- the background image color extractor, already handled gracefully
+
+---
 
 ## Solution
 
-Merge push notification handlers INTO the PWA service worker using Workbox's `importScripts`, and rewrite the hook to use the single PWA worker.
+Rewrite `usePushNotifications.ts` to be resilient against service worker registration failures.
 
-```text
-BEFORE (broken):
-  VitePWA registers /sw.js at scope /
-  usePushNotifications registers /sw-push.js at scope /  <-- CONFLICT
-  pushManager.subscribe() fails
+### Changes to `src/hooks/usePushNotifications.ts`
 
-AFTER (fixed):
-  VitePWA registers /sw.js at scope /
-  /sw.js loads push handlers via importScripts('/sw-push.js')
-  usePushNotifications uses navigator.serviceWorker.ready (existing PWA SW)
-  pushManager.subscribe() succeeds
+**1. Add timeout wrapper for `navigator.serviceWorker.ready`**
+
+```typescript
+const waitForServiceWorkerReady = (timeoutMs = 5000): Promise<ServiceWorkerRegistration> => {
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      reject(new Error('Service worker ready timed out'));
+    }, timeoutMs);
+
+    navigator.serviceWorker.ready.then((reg) => {
+      clearTimeout(timeout);
+      resolve(reg);
+    });
+  });
+};
 ```
 
----
+**2. Add manual SW registration fallback**
 
-## File Changes
+If `navigator.serviceWorker.ready` times out, manually register `/sw.js`:
 
-### 1. `vite.config.ts`
-
-Add `importScripts: ['/sw-push.js']` to the `workbox` config block. This tells the generated PWA service worker to load the push event handlers from `sw-push.js` at startup.
-
-```js
-workbox: {
-  importScripts: ['/sw-push.js'],  // <-- ADD THIS
-  maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
-  // ... rest unchanged
+```typescript
+let registration: ServiceWorkerRegistration;
+try {
+  registration = await waitForServiceWorkerReady(5000);
+} catch {
+  console.log('[Push] SW not ready, attempting manual registration...');
+  registration = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
+  await waitForActivation(registration);
 }
 ```
 
-### 2. `src/hooks/usePushNotifications.ts` -- Full rewrite
+**3. Expand stale worker cleanup**
 
-Key changes:
+Clean up ALL stale service workers (not just `sw-push.js`), then re-register fresh:
 
-**Remove all separate `/sw-push.js` registration code:**
-- Delete the `getRegistration('/sw-push.js')` and `register('/sw-push.js')` calls in `useEffect`
-- Delete the same pattern in `subscribe()` and `unsubscribe()`
-
-**Use the existing PWA service worker instead:**
-- Use `navigator.serviceWorker.ready` which resolves to the active PWA worker (the one that now includes push handlers via importScripts)
-
-**Add stale worker cleanup:**
-- On mount, find and unregister any leftover `/sw-push.js` registrations from previous attempts
-
-**Add activation wait helper:**
-- Sometimes `navigator.serviceWorker.ready` resolves before the worker is fully activated. Add a helper that waits for the `activated` state before calling `pushManager.subscribe()`
-
-**Add detailed console logging at each step** so failures can be traced in DevTools.
-
-**Improved error messages:**
-- Detect HTTP 410 (expired subscription) and show a specific message
-- Detect permission denial vs network errors separately
-
-Logic flow:
-```text
-subscribe()
-  1. Fetch VAPID key from get-vapid-key edge function
-  2. Request browser notification permission
-  3. Clean up any stale /sw-push.js registrations
-  4. Get registration via navigator.serviceWorker.ready
-  5. Ensure worker is in 'activated' state
-  6. Call pushManager.subscribe({ applicationServerKey })
-  7. Save subscription (endpoint, p256dh, auth) to push_subscriptions table
-  8. Show success toast
-
-unsubscribe()
-  1. Get registration via navigator.serviceWorker.ready
-  2. Get existing subscription and call unsubscribe()
-  3. Delete record from push_subscriptions table
-  4. Show success toast
-
-checkSubscription() -- on mount
-  1. Get registration via navigator.serviceWorker.ready
-  2. Check pushManager.getSubscription()
-  3. Set isSubscribed state accordingly
+```typescript
+const cleanupAllStaleWorkers = async () => {
+  const registrations = await navigator.serviceWorker.getRegistrations();
+  for (const reg of registrations) {
+    const scriptURL = reg.active?.scriptURL || '';
+    if (scriptURL.includes('sw-push.js')) {
+      await reg.unregister();
+    }
+  }
+};
 ```
 
-### 3. `public/sw-push.js` -- No changes needed
+**4. Apply the same pattern to the init check on mount**
 
-The push/notificationclick/notificationclose event handlers remain as-is. They will now execute in the context of the main PWA service worker via `importScripts`.
+The `useEffect` init function also calls `navigator.serviceWorker.ready` without a timeout -- fix it to use the timeout wrapper and silently fail if no worker is ready (don't block the UI).
 
----
+**5. Improve error messages**
 
-## Why This Works
-
-- Workbox's `importScripts` option adds `importScripts('/sw-push.js')` to the top of the generated service worker file
-- The push event listeners in `sw-push.js` are evaluated in the context of the main worker
-- There is only ONE service worker controlling scope `/`, so no conflicts
-- `navigator.serviceWorker.ready` resolves to this single worker, which now handles both caching AND push
-- The VAPID key handshake works because the worker is properly activated before `pushManager.subscribe()` is called
+Add specific detection for:
+- `AbortError` -- "Service worker failed to register. Please refresh and try again."
+- Timeout -- "Service worker is taking too long. Please reload the page."
 
 ---
 
-## Files Modified
+## Summary of Changes
 
-| File | Change |
-|------|--------|
-| `vite.config.ts` | Add `importScripts: ['/sw-push.js']` to workbox config |
-| `src/hooks/usePushNotifications.ts` | Remove separate SW registration, use `navigator.serviceWorker.ready`, add stale cleanup, add activation wait, add logging |
+| File | What Changes |
+|------|-------------|
+| `src/hooks/usePushNotifications.ts` | Add `waitForServiceWorkerReady()` with 5-second timeout, add manual `/sw.js` registration fallback at Step 4, expand stale cleanup, wrap init check in timeout, improve error messages |
 
+No changes needed to `vite.config.ts`, `sw-push.js`, or any other files.
