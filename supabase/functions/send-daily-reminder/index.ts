@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.7.1";
-import webpush from "https://esm.sh/web-push@3.6.7";
+import { sendWebPush, getVapidKeys } from "../_shared/web-push.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -17,39 +17,17 @@ serve(async (req) => {
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    const VAPID_PUBLIC_KEY = Deno.env.get("VAPID_PUBLIC_KEY");
-    const VAPID_PRIVATE_KEY = Deno.env.get("VAPID_PRIVATE_KEY");
-    const VAPID_SUBJECT = Deno.env.get("VAPID_SUBJECT") || "mailto:support@iamsober.app";
-
-    if (!VAPID_PUBLIC_KEY || !VAPID_PRIVATE_KEY) {
-      throw new Error("VAPID keys not configured");
-    }
-
-    webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
-
-    // Get current UTC time
+    const vapid = getVapidKeys();
     const now = new Date();
     const currentUTCHour = now.getUTCHours();
     
     console.log(`Running daily reminder check at UTC hour: ${currentUTCHour}`);
 
-    // Find users who:
-    // 1. Have push subscriptions
-    // 2. Have daily_reminder enabled
-    // 3. Have reminder time matching current hour (approximate)
-    // 4. Haven't checked in today
     const today = new Date().toISOString().split('T')[0];
 
-    // Get all profiles with push subscriptions and daily reminders enabled
     const { data: profiles, error: profilesError } = await supabase
       .from("profiles")
-      .select(`
-        id,
-        pseudonym,
-        notification_preferences,
-        current_streak,
-        last_check_in
-      `)
+      .select(`id, pseudonym, notification_preferences, current_streak, last_check_in`)
       .not("notification_preferences", "is", null);
 
     if (profilesError) {
@@ -65,18 +43,15 @@ serve(async (req) => {
     for (const profile of profiles || []) {
       const prefs = profile.notification_preferences as any;
       
-      // Skip if daily reminder is disabled
       if (!prefs?.daily_reminder) {
         skippedCount++;
         continue;
       }
 
-      // Get user's preferred time and timezone
       const reminderTime = prefs.daily_reminder_time || '09:00';
       const userTimezone = prefs.timezone || 'UTC';
       const reminderHour = parseInt(reminderTime.split(':')[0], 10);
       
-      // Calculate what hour it currently is in the user's timezone
       let userCurrentHour: number;
       try {
         const formatter = new Intl.DateTimeFormat('en-US', {
@@ -85,13 +60,11 @@ serve(async (req) => {
           hour12: false,
         });
         userCurrentHour = parseInt(formatter.format(now), 10);
-      } catch (e) {
-        // Fallback to UTC if timezone is invalid
+      } catch (_e) {
         console.log(`Invalid timezone ${userTimezone} for user ${profile.id}, using UTC`);
         userCurrentHour = currentUTCHour;
       }
       
-      // Check if it's the right hour in the user's timezone
       if (userCurrentHour !== reminderHour) {
         skippedCount++;
         continue;
@@ -99,7 +72,6 @@ serve(async (req) => {
       
       console.log(`User ${profile.id}: timezone=${userTimezone}, localHour=${userCurrentHour}, reminderHour=${reminderHour}`);
 
-      // Check if already checked in today
       const lastCheckIn = profile.last_check_in ? new Date(profile.last_check_in).toISOString().split('T')[0] : null;
       if (lastCheckIn === today) {
         console.log(`User ${profile.id} already checked in today, skipping`);
@@ -107,7 +79,6 @@ serve(async (req) => {
         continue;
       }
 
-      // Get user's push subscription
       const { data: subscription, error: subError } = await supabase
         .from("push_subscriptions")
         .select("*")
@@ -120,7 +91,6 @@ serve(async (req) => {
         continue;
       }
 
-      // Build motivational message based on streak
       const streak = profile.current_streak || 0;
       let message = "";
       
@@ -136,13 +106,9 @@ serve(async (req) => {
         message = `${streak} days! You're an inspiration. How are you feeling today?`;
       }
 
-      // Build the push subscription object
-      const pushSubscription = {
+      const pushSub = {
         endpoint: subscription.endpoint,
-        keys: {
-          p256dh: subscription.p256dh,
-          auth: subscription.auth,
-        },
+        keys: { p256dh: subscription.p256dh, auth: subscription.auth },
       };
 
       const payload = JSON.stringify({
@@ -156,31 +122,25 @@ serve(async (req) => {
       });
 
       try {
-        await webpush.sendNotification(pushSubscription, payload);
-        console.log(`Sent daily reminder to user ${profile.id}`);
-        sentCount++;
+        const result = await sendWebPush(pushSub, payload, vapid);
+        if (result.ok) {
+          console.log(`Sent daily reminder to user ${profile.id}`);
+          sentCount++;
+        } else if (result.status === 410) {
+          await supabase.from("push_subscriptions").delete().eq("user_id", profile.id);
+          console.log(`Deleted expired subscription for user ${profile.id}`);
+        } else {
+          console.error(`Error sending to user ${profile.id}: ${result.status} ${result.body}`);
+        }
       } catch (pushError: any) {
         console.error(`Error sending to user ${profile.id}:`, pushError.message);
-        
-        // Handle expired subscriptions
-        if (pushError.statusCode === 410) {
-          await supabase
-            .from("push_subscriptions")
-            .delete()
-            .eq("user_id", profile.id);
-          console.log(`Deleted expired subscription for user ${profile.id}`);
-        }
       }
     }
 
     console.log(`Daily reminder complete: ${sentCount} sent, ${skippedCount} skipped`);
 
     return new Response(
-      JSON.stringify({ 
-        success: true, 
-        sent: sentCount, 
-        skipped: skippedCount 
-      }),
+      JSON.stringify({ success: true, sent: sentCount, skipped: skippedCount }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
 

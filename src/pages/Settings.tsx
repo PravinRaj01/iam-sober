@@ -16,6 +16,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { PageHeader } from "@/components/layout/PageHeader";
 import SidebarOrderEditor from "@/components/SidebarOrderEditor";
 import { usePushNotifications } from "@/hooks/usePushNotifications";
+import { TestNotificationButton } from "@/components/TestNotificationButton";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { languageNames, type Language } from "@/i18n";
 import {
@@ -629,11 +630,14 @@ const Settings = () => {
               )}
 
               {isSubscribed && (
-                <div className="flex items-center gap-2 p-3 rounded-lg bg-primary/10 border border-primary/20">
-                  <CheckCircle2 className="h-4 w-4 text-primary shrink-0" />
-                  <p className="text-sm text-primary">
-                    {t("settings.pushEnabledMsg")}
-                  </p>
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2 p-3 rounded-lg bg-primary/10 border border-primary/20">
+                    <CheckCircle2 className="h-4 w-4 text-primary shrink-0" />
+                    <p className="text-sm text-primary">
+                      {t("settings.pushEnabledMsg")}
+                    </p>
+                  </div>
+                  <TestNotificationButton />
                 </div>
               )}
             </div>

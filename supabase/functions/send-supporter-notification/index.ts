@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.7.1";
-import webpush from "https://esm.sh/web-push@3.6.7";
+import { sendWebPush, getVapidKeys } from "../_shared/web-push.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -17,23 +17,13 @@ serve(async (req) => {
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    const VAPID_PUBLIC_KEY = Deno.env.get("VAPID_PUBLIC_KEY");
-    const VAPID_PRIVATE_KEY = Deno.env.get("VAPID_PRIVATE_KEY");
-    const VAPID_SUBJECT = Deno.env.get("VAPID_SUBJECT") || "mailto:support@iamsober.app";
-
-    if (!VAPID_PUBLIC_KEY || !VAPID_PRIVATE_KEY) {
-      throw new Error("VAPID keys not configured");
-    }
-
-    webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
-
+    const vapid = getVapidKeys();
     const { user_id, supporter_name, message_type, message_preview } = await req.json();
 
     if (!user_id) {
       throw new Error("user_id is required");
     }
 
-    // Check if user has supporter updates enabled
     const { data: profile, error: profileError } = await supabase
       .from("profiles")
       .select("notification_preferences, pseudonym")
@@ -57,7 +47,6 @@ serve(async (req) => {
       );
     }
 
-    // Get user's push subscription
     const { data: subscription, error: subError } = await supabase
       .from("push_subscriptions")
       .select("*")
@@ -72,7 +61,6 @@ serve(async (req) => {
       );
     }
 
-    // Build notification based on message type
     let title = "";
     let body = "";
     let url = "/";
@@ -99,12 +87,9 @@ serve(async (req) => {
         url = "/dashboard";
     }
 
-    const pushSubscription = {
+    const pushSub = {
       endpoint: subscription.endpoint,
-      keys: {
-        p256dh: subscription.p256dh,
-        auth: subscription.auth,
-      },
+      keys: { p256dh: subscription.p256dh, auth: subscription.auth },
     };
 
     const payload = JSON.stringify({
@@ -113,15 +98,19 @@ serve(async (req) => {
       icon: "/pwa-192x192.png",
       badge: "/pwa-192x192.png",
       url,
-      data: { 
-        type: "supporter_notification",
-        supporter_name,
-        message_type 
-      },
+      data: { type: "supporter_notification", supporter_name, message_type },
       timestamp: Date.now(),
     });
 
-    await webpush.sendNotification(pushSubscription, payload);
+    const result = await sendWebPush(pushSub, payload, vapid);
+
+    if (!result.ok) {
+      if (result.status === 410) {
+        await supabase.from("push_subscriptions").delete().eq("user_id", user_id);
+      }
+      console.error("Push service error:", result.status, result.body);
+      throw new Error(`Push service responded with ${result.status}`);
+    }
 
     console.log("Supporter notification sent to user:", user_id);
 
@@ -132,7 +121,6 @@ serve(async (req) => {
 
   } catch (error: any) {
     console.error("Error sending supporter notification:", error);
-    
     return new Response(
       JSON.stringify({ error: error.message }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
