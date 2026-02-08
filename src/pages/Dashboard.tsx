@@ -28,6 +28,7 @@ import { useLevelUp } from "@/hooks/useLevelUp";
 import HealthStatusCard from "@/components/HealthStatusCard";
 import { useSessionManager, clearSessionInfo } from "@/hooks/useSessionManager";
 import { useLanguage } from "@/contexts/LanguageContext";
+import ProactiveIntervention from "@/components/ProactiveIntervention";
 
 const Dashboard = () => {
   const [user, setUser] = useState<User | null>(null);
@@ -253,6 +254,8 @@ const Dashboard = () => {
         state={chatbotState} 
       />
       <ChatbotDrawer state={chatbotState} onStateChange={setChatbotState} />
+      
+      <ProactiveIntervention onOpenChat={() => setChatbotState('full')} />
       
       <LevelUpDialog
         open={showLevelUp}

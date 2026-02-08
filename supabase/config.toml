@@ -39,6 +39,9 @@ verify_jwt = false
 [functions.proactive-check]
 verify_jwt = false
 
+[functions.proactive-check-scheduled]
+verify_jwt = false
+
 [functions.reset-user-data]
 verify_jwt = false
 

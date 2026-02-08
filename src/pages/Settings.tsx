@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { Bell, User, Shield, LogOut, Sparkles, Info, RefreshCw, Trash2, AlertTriangle, Gamepad2, CheckCircle2, Loader2, Globe } from "lucide-react";
+import { Bell, User, Shield, LogOut, Sparkles, Info, RefreshCw, Trash2, AlertTriangle, Gamepad2, CheckCircle2, Loader2, Globe, Brain, Moon } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 import { useBackground } from "@/contexts/BackgroundContext";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -55,9 +55,17 @@ const Settings = () => {
   const [timezone, setTimezone] = useState(() => Intl.DateTimeFormat().resolvedOptions().timeZone);
   const [weeklyReport, setWeeklyReport] = useState(true);
   const [weeklyReportDay, setWeeklyReportDay] = useState("monday");
+  const [weeklyReportTime, setWeeklyReportTime] = useState("10:00");
   const [milestoneAlerts, setMilestoneAlerts] = useState(true);
   const [supporterUpdates, setSupporterUpdates] = useState(false);
   const [notificationLoading, setNotificationLoading] = useState(false);
+  
+  // Proactive AI settings
+  const [proactiveEnabled, setProactiveEnabled] = useState(true);
+  const [proactiveFrequency, setProactiveFrequency] = useState("medium");
+  const [quietHoursEnabled, setQuietHoursEnabled] = useState(false);
+  const [quietHoursStart, setQuietHoursStart] = useState("22:00");
+  const [quietHoursEnd, setQuietHoursEnd] = useState("08:00");
 
   // Common timezones list
   const COMMON_TIMEZONES = [
@@ -165,8 +173,15 @@ const Settings = () => {
           setTimezone(notifPrefs.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone);
           setWeeklyReport(notifPrefs.weekly_report ?? true);
           setWeeklyReportDay(notifPrefs.weekly_report_day || "monday");
+          setWeeklyReportTime(notifPrefs.weekly_report_time || "10:00");
           setMilestoneAlerts(notifPrefs.milestone_alerts ?? true);
           setSupporterUpdates(notifPrefs.supporter_updates ?? false);
+          // Proactive AI settings
+          setProactiveEnabled(notifPrefs.proactive_enabled ?? true);
+          setProactiveFrequency(notifPrefs.proactive_frequency || "medium");
+          setQuietHoursEnabled(notifPrefs.quiet_hours_enabled ?? false);
+          setQuietHoursStart(notifPrefs.quiet_hours_start || "22:00");
+          setQuietHoursEnd(notifPrefs.quiet_hours_end || "08:00");
         }
       }
       
@@ -233,8 +248,14 @@ const Settings = () => {
             timezone: timezone,
             weekly_report: weeklyReport,
             weekly_report_day: weeklyReportDay,
+            weekly_report_time: weeklyReportTime,
             milestone_alerts: milestoneAlerts,
             supporter_updates: supporterUpdates,
+            proactive_enabled: proactiveEnabled,
+            proactive_frequency: proactiveFrequency,
+            quiet_hours_enabled: quietHoursEnabled,
+            quiet_hours_start: quietHoursStart,
+            quiet_hours_end: quietHoursEnd,
           },
         } as any)
         .eq("id", user.id);
@@ -500,14 +521,29 @@ const Settings = () => {
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="06:00">6:00 AM</SelectItem>
+                        <SelectItem value="06:30">6:30 AM</SelectItem>
                         <SelectItem value="07:00">7:00 AM</SelectItem>
+                        <SelectItem value="07:30">7:30 AM</SelectItem>
                         <SelectItem value="08:00">8:00 AM</SelectItem>
+                        <SelectItem value="08:30">8:30 AM</SelectItem>
                         <SelectItem value="09:00">9:00 AM</SelectItem>
+                        <SelectItem value="09:30">9:30 AM</SelectItem>
                         <SelectItem value="10:00">10:00 AM</SelectItem>
+                        <SelectItem value="10:30">10:30 AM</SelectItem>
+                        <SelectItem value="11:00">11:00 AM</SelectItem>
+                        <SelectItem value="11:30">11:30 AM</SelectItem>
                         <SelectItem value="12:00">12:00 PM</SelectItem>
+                        <SelectItem value="12:30">12:30 PM</SelectItem>
+                        <SelectItem value="13:00">1:00 PM</SelectItem>
+                        <SelectItem value="14:00">2:00 PM</SelectItem>
+                        <SelectItem value="15:00">3:00 PM</SelectItem>
+                        <SelectItem value="16:00">4:00 PM</SelectItem>
+                        <SelectItem value="17:00">5:00 PM</SelectItem>
                         <SelectItem value="18:00">6:00 PM</SelectItem>
+                        <SelectItem value="19:00">7:00 PM</SelectItem>
                         <SelectItem value="20:00">8:00 PM</SelectItem>
                         <SelectItem value="21:00">9:00 PM</SelectItem>
+                        <SelectItem value="22:00">10:00 PM</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -545,22 +581,42 @@ const Settings = () => {
                 <Switch checked={weeklyReport} onCheckedChange={setWeeklyReport} />
               </div>
               {weeklyReport && (
-                <div className="ml-4 pl-4 border-l-2 border-border">
-                  <Label className="text-sm">{t("settings.reportDay")}</Label>
-                  <Select value={weeklyReportDay} onValueChange={setWeeklyReportDay}>
-                    <SelectTrigger className="w-32 mt-1">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="monday">Monday</SelectItem>
-                      <SelectItem value="tuesday">Tuesday</SelectItem>
-                      <SelectItem value="wednesday">Wednesday</SelectItem>
-                      <SelectItem value="thursday">Thursday</SelectItem>
-                      <SelectItem value="friday">Friday</SelectItem>
-                      <SelectItem value="saturday">Saturday</SelectItem>
-                      <SelectItem value="sunday">Sunday</SelectItem>
-                    </SelectContent>
-                  </Select>
+                <div className="ml-4 pl-4 border-l-2 border-border space-y-3">
+                  <div>
+                    <Label className="text-sm">{t("settings.reportDay")}</Label>
+                    <Select value={weeklyReportDay} onValueChange={setWeeklyReportDay}>
+                      <SelectTrigger className="w-32 mt-1">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="monday">Monday</SelectItem>
+                        <SelectItem value="tuesday">Tuesday</SelectItem>
+                        <SelectItem value="wednesday">Wednesday</SelectItem>
+                        <SelectItem value="thursday">Thursday</SelectItem>
+                        <SelectItem value="friday">Friday</SelectItem>
+                        <SelectItem value="saturday">Saturday</SelectItem>
+                        <SelectItem value="sunday">Sunday</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label className="text-sm">Report Time</Label>
+                    <Select value={weeklyReportTime} onValueChange={setWeeklyReportTime}>
+                      <SelectTrigger className="w-32 mt-1">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="08:00">8:00 AM</SelectItem>
+                        <SelectItem value="09:00">9:00 AM</SelectItem>
+                        <SelectItem value="10:00">10:00 AM</SelectItem>
+                        <SelectItem value="11:00">11:00 AM</SelectItem>
+                        <SelectItem value="12:00">12:00 PM</SelectItem>
+                        <SelectItem value="14:00">2:00 PM</SelectItem>
+                        <SelectItem value="17:00">5:00 PM</SelectItem>
+                        <SelectItem value="19:00">7:00 PM</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
               )}
             </div>
@@ -583,6 +639,102 @@ const Settings = () => {
                 <p className="text-sm text-muted-foreground">{t("settings.supporterUpdatesDesc")}</p>
               </div>
               <Switch checked={supporterUpdates} onCheckedChange={setSupporterUpdates} />
+            </div>
+
+            <Separator />
+
+            {/* AI Coach Proactive Interventions */}
+            <div className="space-y-4">
+              <div className="flex items-center gap-2 text-muted-foreground">
+                <Brain className="h-4 w-4" />
+                <span className="text-xs font-medium uppercase tracking-wide">AI Coach</span>
+              </div>
+              
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="space-y-0.5">
+                    <Label>Proactive Check-ins</Label>
+                    <p className="text-sm text-muted-foreground">
+                      Let AI Coach reach out when it detects you may need support
+                    </p>
+                  </div>
+                  <Switch checked={proactiveEnabled} onCheckedChange={setProactiveEnabled} />
+                </div>
+                
+                {proactiveEnabled && (
+                  <div className="ml-4 pl-4 border-l-2 border-border space-y-4">
+                    <div>
+                      <Label className="text-sm">Check-in Frequency</Label>
+                      <Select value={proactiveFrequency} onValueChange={setProactiveFrequency}>
+                        <SelectTrigger className="w-40 mt-1">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="low">Low (once daily)</SelectItem>
+                          <SelectItem value="medium">Medium (every 6 hours)</SelectItem>
+                          <SelectItem value="high">High (when risk detected)</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Higher frequency means more proactive support during difficult times
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </div>
+              
+              {/* Quiet Hours */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="space-y-0.5">
+                    <Label className="flex items-center gap-2">
+                      <Moon className="h-4 w-4" />
+                      Quiet Hours
+                    </Label>
+                    <p className="text-sm text-muted-foreground">
+                      Pause notifications during sleep or focus time
+                    </p>
+                  </div>
+                  <Switch checked={quietHoursEnabled} onCheckedChange={setQuietHoursEnabled} />
+                </div>
+                
+                {quietHoursEnabled && (
+                  <div className="ml-4 pl-4 border-l-2 border-border flex items-center gap-3">
+                    <div>
+                      <Label className="text-xs">Start</Label>
+                      <Select value={quietHoursStart} onValueChange={setQuietHoursStart}>
+                        <SelectTrigger className="w-24 mt-1">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="20:00">8:00 PM</SelectItem>
+                          <SelectItem value="21:00">9:00 PM</SelectItem>
+                          <SelectItem value="22:00">10:00 PM</SelectItem>
+                          <SelectItem value="23:00">11:00 PM</SelectItem>
+                          <SelectItem value="00:00">12:00 AM</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <span className="text-muted-foreground mt-5">to</span>
+                    <div>
+                      <Label className="text-xs">End</Label>
+                      <Select value={quietHoursEnd} onValueChange={setQuietHoursEnd}>
+                        <SelectTrigger className="w-24 mt-1">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="05:00">5:00 AM</SelectItem>
+                          <SelectItem value="06:00">6:00 AM</SelectItem>
+                          <SelectItem value="07:00">7:00 AM</SelectItem>
+                          <SelectItem value="08:00">8:00 AM</SelectItem>
+                          <SelectItem value="09:00">9:00 AM</SelectItem>
+                          <SelectItem value="10:00">10:00 AM</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
 
             <Separator />

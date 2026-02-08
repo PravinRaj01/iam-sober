@@ -45,11 +45,24 @@ import {
  * - Mobile/tablet responsive layout
  */
 
-// Cost per 1K tokens (approximate)
-const MODEL_COSTS = {
+// Cost per 1K tokens (approximate) - Updated with all models
+const MODEL_COSTS: Record<string, { input: number; output: number }> = {
+  // Groq models (very cheap)
+  "groq-llama3.3-70b": { input: 0.0007, output: 0.0008 },
+  "groq-llama3.1-70b": { input: 0.0007, output: 0.0008 },
+  "groq-llama3.1-8b": { input: 0.0001, output: 0.0001 },
   "llama-3.3-70b-versatile": { input: 0.0007, output: 0.0008 },
-  "gpt-4": { input: 0.03, output: 0.06 },
-  "claude-3": { input: 0.015, output: 0.075 },
+  // Cerebras (very cheap, fast)
+  "cerebras-llama3.3-70b": { input: 0.0006, output: 0.0006 },
+  "cerebras-llama3.1-70b": { input: 0.0006, output: 0.0006 },
+  // Google Gemini (cheap)
+  "gemini-2.5-flash-lite": { input: 0.0001, output: 0.0004 },
+  "gemini-2.0-flash": { input: 0.0001, output: 0.0004 },
+  // Regional models
+  "sealion-v4-27b": { input: 0.0012, output: 0.0012 },
+  "sarvam-m-24b": { input: 0.0015, output: 0.0015 },
+  // Fallback
+  "fallback-static": { input: 0, output: 0 },
   default: { input: 0.001, output: 0.002 },
 };
 

@@ -70,6 +70,24 @@ serve(async (req) => {
         continue;
       }
       
+      // Check quiet hours
+      const quietHoursEnabled = prefs.quiet_hours_enabled ?? false;
+      if (quietHoursEnabled) {
+        const quietStart = parseInt((prefs.quiet_hours_start || "22:00").split(':')[0], 10);
+        const quietEnd = parseInt((prefs.quiet_hours_end || "08:00").split(':')[0], 10);
+        
+        // Check if current hour is in quiet hours
+        const inQuietHours = quietStart > quietEnd
+          ? (userCurrentHour >= quietStart || userCurrentHour < quietEnd)
+          : (userCurrentHour >= quietStart && userCurrentHour < quietEnd);
+        
+        if (inQuietHours) {
+          console.log(`User ${profile.id} in quiet hours, skipping`);
+          skippedCount++;
+          continue;
+        }
+      }
+      
       console.log(`User ${profile.id}: timezone=${userTimezone}, localHour=${userCurrentHour}, reminderHour=${reminderHour}`);
 
       const lastCheckIn = profile.last_check_in ? new Date(profile.last_check_in).toISOString().split('T')[0] : null;

@@ -89,6 +89,20 @@ const TOOL_CATEGORIES = {
       { name: "escalate_crisis", description: "Emergency escalation with resources" },
     ]
   },
+  proactive: {
+    title: "Proactive Tools",
+    description: "Background risk detection & outreach",
+    icon: Heart,
+    color: "text-rose-500",
+    bgColor: "bg-rose-500/10",
+    tools: [
+      { name: "proactive_check_scheduled", description: "Background risk signal scanning (every 4h)" },
+      { name: "detect_relapse_patterns", description: "30/90-day relapse history analysis" },
+      { name: "journal_sentiment_analysis", description: "Declining mood detection from journals" },
+      { name: "adaptive_frequency", description: "AI-driven check-in frequency adjustment" },
+      { name: "critical_outreach", description: "Immediate intervention for high-risk users" },
+    ]
+  },
   meta: {
     title: "Meta Tools",
     description: "Observability and tracking",
@@ -363,7 +377,7 @@ const AIObservability = () => {
                         </Badge>
                         <Badge variant="secondary" className="text-xs">
                           <Wrench className="h-3 w-3 mr-1" />
-                          15 Tools
+                          20 Tools
                         </Badge>
                         <Badge variant="secondary" className="text-xs">
                           <Shield className="h-3 w-3 mr-1" />
@@ -416,7 +430,7 @@ const AIObservability = () => {
                   Available Tools ({Object.values(TOOL_CATEGORIES).reduce((acc, cat) => acc + cat.tools.length, 0)})
                 </h2>
                 <Tabs defaultValue="read" className="w-full">
-                  <TabsList className="grid w-full grid-cols-4 mb-4">
+                  <TabsList className="grid w-full grid-cols-5 mb-4">
                     {Object.entries(TOOL_CATEGORIES).map(([key, category]) => (
                       <TabsTrigger key={key} value={key} className="text-xs md:text-sm">
                         <category.icon className="h-4 w-4 mr-1.5" />

@@ -49,9 +49,21 @@ import {
 
 const INTERVENTION_TYPES = {
   crisis: { color: 'hsl(var(--destructive))', label: 'Crisis', icon: AlertTriangle },
+  critical_outreach: { color: 'hsl(var(--destructive))', label: 'Critical Outreach', icon: Shield },
+  high_priority_check_in: { color: 'hsl(var(--chart-2))', label: 'High Priority', icon: Activity },
   high_urge: { color: 'hsl(var(--chart-2))', label: 'High Urge', icon: Activity },
+  high_urges: { color: 'hsl(var(--chart-2))', label: 'High Urges', icon: Activity },
+  declining_mood: { color: 'hsl(var(--chart-3))', label: 'Declining Mood', icon: Heart },
   mood_drop: { color: 'hsl(var(--chart-3))', label: 'Mood Drop', icon: Heart },
+  recent_relapse: { color: 'hsl(var(--destructive))', label: 'Recent Relapse', icon: AlertTriangle },
+  multiple_relapses: { color: 'hsl(var(--destructive))', label: 'Multiple Relapses', icon: AlertTriangle },
+  journal_sentiment_decline: { color: 'hsl(var(--chart-4))', label: 'Sentiment Decline', icon: Heart },
+  missed_check_ins: { color: 'hsl(var(--chart-4))', label: 'Missed Check-ins', icon: Clock },
+  chat_inactivity: { color: 'hsl(var(--chart-4))', label: 'Chat Inactivity', icon: MessageSquare },
+  high_stress: { color: 'hsl(var(--chart-2))', label: 'High Stress', icon: Activity },
+  poor_sleep: { color: 'hsl(var(--chart-3))', label: 'Poor Sleep', icon: Clock },
   pattern_alert: { color: 'hsl(var(--chart-4))', label: 'Pattern Alert', icon: TrendingUp },
+  proactive_scheduled: { color: 'hsl(var(--primary))', label: 'Proactive Check', icon: Sparkles },
   support: { color: 'hsl(var(--primary))', label: 'Support', icon: MessageSquare },
 };
 

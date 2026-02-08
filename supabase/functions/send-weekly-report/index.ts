@@ -54,6 +54,7 @@ serve(async (req) => {
       }
 
       const reportDay = (prefs.weekly_report_day || 'monday').toLowerCase();
+      const reportHour = parseInt((prefs.weekly_report_time || "10:00").split(':')[0], 10);
       const userTimezone = prefs.timezone || 'UTC';
       
       let userCurrentDay: string;
@@ -69,9 +70,26 @@ serve(async (req) => {
         userCurrentHour = currentUTCHour;
       }
       
-      if (userCurrentDay !== reportDay || userCurrentHour !== 10) {
+      if (userCurrentDay !== reportDay || userCurrentHour !== reportHour) {
         skippedCount++;
         continue;
+      }
+      
+      // Check quiet hours
+      const quietHoursEnabled = prefs.quiet_hours_enabled ?? false;
+      if (quietHoursEnabled) {
+        const quietStart = parseInt((prefs.quiet_hours_start || "22:00").split(':')[0], 10);
+        const quietEnd = parseInt((prefs.quiet_hours_end || "08:00").split(':')[0], 10);
+        
+        const inQuietHours = quietStart > quietEnd
+          ? (userCurrentHour >= quietStart || userCurrentHour < quietEnd)
+          : (userCurrentHour >= quietStart && userCurrentHour < quietEnd);
+        
+        if (inQuietHours) {
+          console.log(`User ${profile.id} in quiet hours, skipping weekly report`);
+          skippedCount++;
+          continue;
+        }
       }
       
       console.log(`User ${profile.id}: timezone=${userTimezone}, localDay=${userCurrentDay}, localHour=${userCurrentHour}`);
