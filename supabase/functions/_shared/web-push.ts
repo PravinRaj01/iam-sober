@@ -42,19 +42,28 @@ async function hkdf(
   info: Uint8Array,
   length: number,
 ): Promise<Uint8Array> {
-  const saltBuffer = salt.length ? salt.buffer.slice(salt.byteOffset, salt.byteOffset + salt.byteLength) : new ArrayBuffer(32);
+  // Ensure we have a proper ArrayBuffer for the salt (not SharedArrayBuffer)
+  let saltKeyData: ArrayBuffer;
+  if (salt.length === 0) {
+    saltKeyData = new ArrayBuffer(32);
+  } else {
+    // Create a new Uint8Array copy to ensure we have a clean ArrayBuffer
+    const saltCopy = new Uint8Array(salt);
+    saltKeyData = saltCopy.buffer;
+  }
+  
+  const saltKey = await crypto.subtle.importKey(
+    "raw",
+    saltKeyData,
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  
+  // Create a clean copy of ikm as well
+  const ikmCopy = new Uint8Array(ikm);
   const prk = new Uint8Array(
-    await crypto.subtle.sign(
-      "HMAC",
-      await crypto.subtle.importKey(
-        "raw",
-        saltBuffer,
-        { name: "HMAC", hash: "SHA-256" },
-        false,
-        ["sign"],
-      ),
-      ikm as unknown as BufferSource,
-    ),
+    await crypto.subtle.sign("HMAC", saltKey, ikmCopy.buffer),
   );
 
   const prkKey = await crypto.subtle.importKey(

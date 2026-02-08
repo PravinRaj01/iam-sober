@@ -29,6 +29,44 @@ function getMilestoneMessage(days: number): string {
   return messages[days] || `${days} days sober! Every day counts. Keep going! 💪`;
 }
 
+// Helper to get user's local time info
+function getUserLocalTime(timezone: string, now: Date): { 
+  hour: number; 
+  minute: number; 
+  dateStr: string;
+} {
+  try {
+    const hourFormatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: timezone,
+      hour: 'numeric',
+      hour12: false,
+    });
+    const minuteFormatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: timezone,
+      minute: 'numeric',
+    });
+    const dateFormatter = new Intl.DateTimeFormat('en-CA', {
+      timeZone: timezone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    });
+    
+    const hour = parseInt(hourFormatter.format(now), 10);
+    const minute = parseInt(minuteFormatter.format(now), 10);
+    const dateStr = dateFormatter.format(now); // YYYY-MM-DD format
+    
+    return { hour, minute, dateStr };
+  } catch (_e) {
+    // Fallback to UTC if timezone is invalid
+    return {
+      hour: now.getUTCHours(),
+      minute: now.getUTCMinutes(),
+      dateStr: now.toISOString().split('T')[0],
+    };
+  }
+}
+
 async function sendToUser(supabase: any, userId: string, milestone: number, vapid: any) {
   const { data: profile, error: profileError } = await supabase
     .from("profiles")
@@ -98,16 +136,18 @@ serve(async (req) => {
     const supabase = createClient(supabaseUrl, supabaseKey);
 
     const vapid = getVapidKeys();
+    const now = new Date();
 
     const body = await req.json().catch(() => ({}));
     const specificUserId = body.user_id;
     const specificMilestone = body.milestone;
+    const dryRun = body.dry_run === true;
 
-    if (specificUserId && specificMilestone) {
+    if (specificUserId && specificMilestone && !dryRun) {
       return await sendToUser(supabase, specificUserId, specificMilestone, vapid);
     }
 
-    console.log("Running milestone check for all users");
+    console.log(`Running milestone check at ${now.toISOString()}${dryRun ? ' (DRY RUN)' : ''}`);
 
     const { data: profiles, error: profilesError } = await supabase
       .from("profiles")
@@ -121,6 +161,8 @@ serve(async (req) => {
 
     let sentCount = 0;
     let skippedCount = 0;
+    let alreadySentCount = 0;
+    const dryRunResults: any[] = [];
 
     for (const profile of profiles || []) {
       const prefs = profile.notification_preferences as any;
@@ -130,13 +172,69 @@ serve(async (req) => {
         continue;
       }
 
-      const startDate = new Date(profile.sobriety_start_date);
-      const today = new Date();
-      const daysSober = Math.floor((today.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+      // Get milestone alert time from preferences (default 09:00)
+      const alertTime = prefs.milestone_alert_time || '09:00';
+      const [alertHourStr, alertMinuteStr] = alertTime.split(':');
+      const alertHour = parseInt(alertHourStr, 10);
+      const alertMinute = parseInt(alertMinuteStr || '0', 10);
+      const userTimezone = prefs.timezone || 'UTC';
+      
+      const { hour: userCurrentHour, minute: userCurrentMinute, dateStr: userDateStr } = getUserLocalTime(userTimezone, now);
 
-      if (!MILESTONES.includes(daysSober)) {
+      // Calculate days sober in user's local timezone
+      const startDate = new Date(profile.sobriety_start_date);
+      const userLocalNow = new Date(now.toLocaleString('en-US', { timeZone: userTimezone }));
+      const daysSober = Math.floor((userLocalNow.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+
+      const isMilestoneDay = MILESTONES.includes(daysSober);
+      const timeMatches = userCurrentHour === alertHour && userCurrentMinute === alertMinute;
+      const shouldSend = isMilestoneDay && timeMatches;
+
+      if (dryRun) {
+        dryRunResults.push({
+          user_id: profile.id,
+          timezone: userTimezone,
+          current_local_time: `${userCurrentHour.toString().padStart(2, '0')}:${userCurrentMinute.toString().padStart(2, '0')}`,
+          alert_time: alertTime,
+          days_sober: daysSober,
+          is_milestone_day: isMilestoneDay,
+          would_send: shouldSend,
+          milestone_alerts_enabled: prefs.milestone_alerts,
+        });
+        continue;
+      }
+
+      if (!isMilestoneDay) {
         skippedCount++;
         continue;
+      }
+
+      if (!timeMatches) {
+        skippedCount++;
+        continue;
+      }
+
+      // Build dedupe key: milestone_alert:YYYY-MM-DD:days:HH:MM
+      const dedupeKey = `milestone_alert:${userDateStr}:${daysSober}:${alertTime}`;
+      
+      // Try to insert into notification_deliveries (dedupe check)
+      const { error: dedupeError } = await supabase
+        .from("notification_deliveries")
+        .insert({
+          user_id: profile.id,
+          type: 'milestone_alert',
+          scheduled_for: now.toISOString(),
+          dedupe_key: dedupeKey,
+        });
+      
+      if (dedupeError) {
+        // Unique constraint violation means already sent
+        if (dedupeError.code === '23505') {
+          console.log(`User ${profile.id} already received milestone alert for ${dedupeKey}`);
+          alreadySentCount++;
+          continue;
+        }
+        console.error(`Dedupe insert error for user ${profile.id}:`, dedupeError);
       }
 
       const { data: subscription, error: subError } = await supabase
@@ -181,10 +279,17 @@ serve(async (req) => {
       }
     }
 
-    console.log(`Milestone check complete: ${sentCount} sent, ${skippedCount} skipped`);
+    if (dryRun) {
+      return new Response(
+        JSON.stringify({ dry_run: true, results: dryRunResults }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    console.log(`Milestone check complete: ${sentCount} sent, ${alreadySentCount} already sent, ${skippedCount} skipped`);
 
     return new Response(
-      JSON.stringify({ success: true, sent: sentCount, skipped: skippedCount }),
+      JSON.stringify({ success: true, sent: sentCount, already_sent: alreadySentCount, skipped: skippedCount }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
 

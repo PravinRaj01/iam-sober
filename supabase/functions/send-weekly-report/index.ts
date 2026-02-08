@@ -9,6 +9,52 @@ const corsHeaders = {
 
 const DAYS_OF_WEEK = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
 
+// Helper to get user's local time info
+function getUserLocalTime(timezone: string, now: Date): { 
+  hour: number; 
+  minute: number; 
+  dayName: string; 
+  isoWeek: string;
+} {
+  try {
+    const hourFormatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: timezone,
+      hour: 'numeric',
+      hour12: false,
+    });
+    const minuteFormatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: timezone,
+      minute: 'numeric',
+    });
+    const dayFormatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: timezone,
+      weekday: 'long',
+    });
+    
+    const hour = parseInt(hourFormatter.format(now), 10);
+    const minute = parseInt(minuteFormatter.format(now), 10);
+    const dayName = dayFormatter.format(now).toLowerCase();
+    
+    // Calculate ISO week number for dedupe key
+    const localDate = new Date(now.toLocaleString('en-US', { timeZone: timezone }));
+    const startOfYear = new Date(localDate.getFullYear(), 0, 1);
+    const days = Math.floor((localDate.getTime() - startOfYear.getTime()) / (24 * 60 * 60 * 1000));
+    const weekNumber = Math.ceil((days + startOfYear.getDay() + 1) / 7);
+    const isoWeek = `${localDate.getFullYear()}-W${weekNumber.toString().padStart(2, '0')}`;
+    
+    return { hour, minute, dayName, isoWeek };
+  } catch (_e) {
+    // Fallback to UTC if timezone is invalid
+    const weekNumber = Math.ceil((now.getTime() - new Date(now.getFullYear(), 0, 1).getTime()) / (7 * 24 * 60 * 60 * 1000));
+    return {
+      hour: now.getUTCHours(),
+      minute: now.getUTCMinutes(),
+      dayName: DAYS_OF_WEEK[now.getUTCDay()],
+      isoWeek: `${now.getFullYear()}-W${weekNumber.toString().padStart(2, '0')}`,
+    };
+  }
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -21,10 +67,19 @@ serve(async (req) => {
 
     const vapid = getVapidKeys();
     const now = new Date();
-    const currentUTCDay = DAYS_OF_WEEK[now.getUTCDay()];
-    const currentUTCHour = now.getUTCHours();
     
-    console.log(`Running weekly report check at UTC day: ${currentUTCDay}, hour: ${currentUTCHour}`);
+    // Parse optional request body for dry_run mode
+    let dryRun = false;
+    let targetUserId: string | null = null;
+    try {
+      const body = await req.json();
+      dryRun = body.dry_run === true;
+      targetUserId = body.user_id || null;
+    } catch (_e) {
+      // No body or invalid JSON, continue normally
+    }
+
+    console.log(`Running weekly report check at ${now.toISOString()}${dryRun ? ' (DRY RUN)' : ''}`);
 
     const weekAgo = new Date(now);
     weekAgo.setDate(weekAgo.getDate() - 7);
@@ -44,8 +99,15 @@ serve(async (req) => {
 
     let sentCount = 0;
     let skippedCount = 0;
+    let alreadySentCount = 0;
+    const dryRunResults: any[] = [];
 
     for (const profile of profiles || []) {
+      // If targeting specific user in dry_run, skip others
+      if (targetUserId && profile.id !== targetUserId) {
+        continue;
+      }
+
       const prefs = profile.notification_preferences as any;
       
       if (!prefs?.weekly_report) {
@@ -54,23 +116,35 @@ serve(async (req) => {
       }
 
       const reportDay = (prefs.weekly_report_day || 'monday').toLowerCase();
-      const reportHour = parseInt((prefs.weekly_report_time || "10:00").split(':')[0], 10);
+      const reportTime = prefs.weekly_report_time || '10:00';
+      const [reportHourStr, reportMinuteStr] = reportTime.split(':');
+      const reportHour = parseInt(reportHourStr, 10);
+      const reportMinute = parseInt(reportMinuteStr || '0', 10);
       const userTimezone = prefs.timezone || 'UTC';
       
-      let userCurrentDay: string;
-      let userCurrentHour: number;
-      try {
-        const dayFormatter = new Intl.DateTimeFormat('en-US', { timeZone: userTimezone, weekday: 'long' });
-        const hourFormatter = new Intl.DateTimeFormat('en-US', { timeZone: userTimezone, hour: 'numeric', hour12: false });
-        userCurrentDay = dayFormatter.format(now).toLowerCase();
-        userCurrentHour = parseInt(hourFormatter.format(now), 10);
-      } catch (_e) {
-        console.log(`Invalid timezone ${userTimezone} for user ${profile.id}, using UTC`);
-        userCurrentDay = currentUTCDay;
-        userCurrentHour = currentUTCHour;
-      }
+      const { hour: userCurrentHour, minute: userCurrentMinute, dayName: userCurrentDay, isoWeek } = getUserLocalTime(userTimezone, now);
       
-      if (userCurrentDay !== reportDay || userCurrentHour !== reportHour) {
+      // Check if current time matches (day + hour + minute)
+      const dayMatches = userCurrentDay === reportDay;
+      const timeMatches = userCurrentHour === reportHour && userCurrentMinute === reportMinute;
+      const shouldSend = dayMatches && timeMatches;
+      
+      if (dryRun) {
+        dryRunResults.push({
+          user_id: profile.id,
+          timezone: userTimezone,
+          current_local_day: userCurrentDay,
+          current_local_time: `${userCurrentHour.toString().padStart(2, '0')}:${userCurrentMinute.toString().padStart(2, '0')}`,
+          report_day: reportDay,
+          report_time: reportTime,
+          iso_week: isoWeek,
+          would_send: shouldSend,
+          weekly_report_enabled: prefs.weekly_report,
+        });
+        continue;
+      }
+
+      if (!shouldSend) {
         skippedCount++;
         continue;
       }
@@ -91,8 +165,31 @@ serve(async (req) => {
           continue;
         }
       }
+
+      // Build dedupe key: weekly_report:YYYY-WW:day:HH:MM
+      const dedupeKey = `weekly_report:${isoWeek}:${reportDay}:${reportTime}`;
       
-      console.log(`User ${profile.id}: timezone=${userTimezone}, localDay=${userCurrentDay}, localHour=${userCurrentHour}`);
+      // Try to insert into notification_deliveries (dedupe check)
+      const { error: dedupeError } = await supabase
+        .from("notification_deliveries")
+        .insert({
+          user_id: profile.id,
+          type: 'weekly_report',
+          scheduled_for: now.toISOString(),
+          dedupe_key: dedupeKey,
+        });
+      
+      if (dedupeError) {
+        // Unique constraint violation means already sent
+        if (dedupeError.code === '23505') {
+          console.log(`User ${profile.id} already received weekly report for ${dedupeKey}`);
+          alreadySentCount++;
+          continue;
+        }
+        console.error(`Dedupe insert error for user ${profile.id}:`, dedupeError);
+      }
+      
+      console.log(`User ${profile.id}: timezone=${userTimezone}, localDay=${userCurrentDay}, localTime=${userCurrentHour}:${userCurrentMinute.toString().padStart(2, '0')}`);
 
       const { data: subscription, error: subError } = await supabase
         .from("push_subscriptions")
@@ -179,10 +276,17 @@ serve(async (req) => {
       }
     }
 
-    console.log(`Weekly report complete: ${sentCount} sent, ${skippedCount} skipped`);
+    if (dryRun) {
+      return new Response(
+        JSON.stringify({ dry_run: true, results: dryRunResults }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    console.log(`Weekly report complete: ${sentCount} sent, ${alreadySentCount} already sent, ${skippedCount} skipped`);
 
     return new Response(
-      JSON.stringify({ success: true, sent: sentCount, skipped: skippedCount }),
+      JSON.stringify({ success: true, sent: sentCount, already_sent: alreadySentCount, skipped: skippedCount }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
 

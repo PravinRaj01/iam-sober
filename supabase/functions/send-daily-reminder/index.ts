@@ -7,6 +7,40 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+// Helper to get user's local time (hour and minute)
+function getUserLocalTime(timezone: string, now: Date): { hour: number; minute: number; dateStr: string } {
+  try {
+    const hourFormatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: timezone,
+      hour: 'numeric',
+      hour12: false,
+    });
+    const minuteFormatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: timezone,
+      minute: 'numeric',
+    });
+    const dateFormatter = new Intl.DateTimeFormat('en-CA', {
+      timeZone: timezone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    });
+    
+    const hour = parseInt(hourFormatter.format(now), 10);
+    const minute = parseInt(minuteFormatter.format(now), 10);
+    const dateStr = dateFormatter.format(now); // YYYY-MM-DD format
+    
+    return { hour, minute, dateStr };
+  } catch (_e) {
+    // Fallback to UTC if timezone is invalid
+    return {
+      hour: now.getUTCHours(),
+      minute: now.getUTCMinutes(),
+      dateStr: now.toISOString().split('T')[0],
+    };
+  }
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -19,11 +53,19 @@ serve(async (req) => {
 
     const vapid = getVapidKeys();
     const now = new Date();
-    const currentUTCHour = now.getUTCHours();
     
-    console.log(`Running daily reminder check at UTC hour: ${currentUTCHour}`);
+    // Parse optional request body for dry_run mode
+    let dryRun = false;
+    let targetUserId: string | null = null;
+    try {
+      const body = await req.json();
+      dryRun = body.dry_run === true;
+      targetUserId = body.user_id || null;
+    } catch (_e) {
+      // No body or invalid JSON, continue normally
+    }
 
-    const today = new Date().toISOString().split('T')[0];
+    console.log(`Running daily reminder check at ${now.toISOString()}${dryRun ? ' (DRY RUN)' : ''}`);
 
     const { data: profiles, error: profilesError } = await supabase
       .from("profiles")
@@ -39,8 +81,15 @@ serve(async (req) => {
 
     let sentCount = 0;
     let skippedCount = 0;
+    let alreadySentCount = 0;
+    const dryRunResults: any[] = [];
 
     for (const profile of profiles || []) {
+      // If targeting specific user in dry_run, skip others
+      if (targetUserId && profile.id !== targetUserId) {
+        continue;
+      }
+
       const prefs = profile.notification_preferences as any;
       
       if (!prefs?.daily_reminder) {
@@ -50,22 +99,28 @@ serve(async (req) => {
 
       const reminderTime = prefs.daily_reminder_time || '09:00';
       const userTimezone = prefs.timezone || 'UTC';
-      const reminderHour = parseInt(reminderTime.split(':')[0], 10);
+      const [reminderHourStr, reminderMinuteStr] = reminderTime.split(':');
+      const reminderHour = parseInt(reminderHourStr, 10);
+      const reminderMinute = parseInt(reminderMinuteStr || '0', 10);
       
-      let userCurrentHour: number;
-      try {
-        const formatter = new Intl.DateTimeFormat('en-US', {
-          timeZone: userTimezone,
-          hour: 'numeric',
-          hour12: false,
+      const { hour: userCurrentHour, minute: userCurrentMinute, dateStr: userDateStr } = getUserLocalTime(userTimezone, now);
+      
+      // Check if current time matches the reminder time (exact minute)
+      const timeMatches = userCurrentHour === reminderHour && userCurrentMinute === reminderMinute;
+      
+      if (dryRun) {
+        dryRunResults.push({
+          user_id: profile.id,
+          timezone: userTimezone,
+          current_local_time: `${userCurrentHour.toString().padStart(2, '0')}:${userCurrentMinute.toString().padStart(2, '0')}`,
+          reminder_time: reminderTime,
+          would_send: timeMatches,
+          daily_reminder_enabled: prefs.daily_reminder,
         });
-        userCurrentHour = parseInt(formatter.format(now), 10);
-      } catch (_e) {
-        console.log(`Invalid timezone ${userTimezone} for user ${profile.id}, using UTC`);
-        userCurrentHour = currentUTCHour;
+        continue;
       }
-      
-      if (userCurrentHour !== reminderHour) {
+
+      if (!timeMatches) {
         skippedCount++;
         continue;
       }
@@ -87,15 +142,39 @@ serve(async (req) => {
           continue;
         }
       }
-      
-      console.log(`User ${profile.id}: timezone=${userTimezone}, localHour=${userCurrentHour}, reminderHour=${reminderHour}`);
 
+      // Check if already checked in today
       const lastCheckIn = profile.last_check_in ? new Date(profile.last_check_in).toISOString().split('T')[0] : null;
-      if (lastCheckIn === today) {
-        console.log(`User ${profile.id} already checked in today, skipping`);
+      if (lastCheckIn === userDateStr) {
+        console.log(`User ${profile.id} already checked in today (${userDateStr}), skipping`);
         skippedCount++;
         continue;
       }
+
+      // Build dedupe key: daily_reminder:YYYY-MM-DD:HH:MM (in user's local time)
+      const dedupeKey = `daily_reminder:${userDateStr}:${reminderTime}`;
+      
+      // Try to insert into notification_deliveries (dedupe check)
+      const { error: dedupeError } = await supabase
+        .from("notification_deliveries")
+        .insert({
+          user_id: profile.id,
+          type: 'daily_reminder',
+          scheduled_for: now.toISOString(),
+          dedupe_key: dedupeKey,
+        });
+      
+      if (dedupeError) {
+        // Unique constraint violation means already sent
+        if (dedupeError.code === '23505') {
+          console.log(`User ${profile.id} already received daily reminder for ${dedupeKey}`);
+          alreadySentCount++;
+          continue;
+        }
+        console.error(`Dedupe insert error for user ${profile.id}:`, dedupeError);
+      }
+
+      console.log(`User ${profile.id}: timezone=${userTimezone}, localTime=${userCurrentHour}:${userCurrentMinute.toString().padStart(2, '0')}, reminderTime=${reminderTime}`);
 
       const { data: subscription, error: subError } = await supabase
         .from("push_subscriptions")
@@ -155,10 +234,17 @@ serve(async (req) => {
       }
     }
 
-    console.log(`Daily reminder complete: ${sentCount} sent, ${skippedCount} skipped`);
+    if (dryRun) {
+      return new Response(
+        JSON.stringify({ dry_run: true, results: dryRunResults }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    console.log(`Daily reminder complete: ${sentCount} sent, ${alreadySentCount} already sent, ${skippedCount} skipped`);
 
     return new Response(
-      JSON.stringify({ success: true, sent: sentCount, skipped: skippedCount }),
+      JSON.stringify({ success: true, sent: sentCount, already_sent: alreadySentCount, skipped: skippedCount }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
 

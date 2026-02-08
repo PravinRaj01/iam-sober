@@ -594,6 +594,33 @@ export type Database = {
         }
         Relationships: []
       }
+      notification_deliveries: {
+        Row: {
+          created_at: string
+          dedupe_key: string
+          id: string
+          scheduled_for: string
+          type: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          dedupe_key: string
+          id?: string
+          scheduled_for: string
+          type: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          dedupe_key?: string
+          id?: string
+          scheduled_for?: string
+          type?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       online_members: {
         Row: {
           last_seen: string
@@ -894,6 +921,7 @@ export type Database = {
       }
     }
     Functions: {
+      cleanup_old_notification_deliveries: { Args: never; Returns: undefined }
       cleanup_online_members: { Args: never; Returns: undefined }
       count_online_members: { Args: never; Returns: number }
       has_role: {
