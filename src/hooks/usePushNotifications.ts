@@ -216,11 +216,34 @@ export const usePushNotifications = () => {
 
       // 4. Subscribe to push
       console.log('[Push] Step 4: Subscribing to push...');
-      const applicationServerKey = urlBase64ToUint8Array(vapidKeyRef.current!);
-      const subscription = await registration.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: applicationServerKey.buffer as ArrayBuffer,
-      });
+      let applicationServerKey = urlBase64ToUint8Array(vapidKeyRef.current!);
+      console.log('[Push] Key bytes:', applicationServerKey.length, 'first4:', Array.from(applicationServerKey.slice(0, 4)));
+
+      let subscription: PushSubscription;
+      try {
+        subscription = await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: applicationServerKey.buffer as ArrayBuffer,
+        });
+      } catch (subError: any) {
+        if (subError.name === 'AbortError') {
+          console.log('[Push] AbortError on first attempt, retrying with fresh key...');
+          vapidKeyRef.current = null;
+          const { data, error } = await supabase.functions.invoke('get-vapid-key');
+          if (error || !data?.vapidPublicKey) {
+            throw new Error('Failed to re-fetch VAPID key');
+          }
+          vapidKeyRef.current = data.vapidPublicKey;
+          applicationServerKey = urlBase64ToUint8Array(vapidKeyRef.current!);
+          console.log('[Push] Retry key bytes:', applicationServerKey.length, 'first4:', Array.from(applicationServerKey.slice(0, 4)));
+          subscription = await registration.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey: applicationServerKey.buffer as ArrayBuffer,
+          });
+        } else {
+          throw subError;
+        }
+      }
       console.log('[Push] Subscription created:', subscription.endpoint.substring(0, 50) + '...');
 
       // 5. Save to Supabase
