@@ -51,10 +51,10 @@ const ChatHeadOverlay = () => {
   const location = useLocation();
   const { isEnabled, isOpen, closeChat } = useChatHead();
   
-  // Don't show chat head on AI Agent page (already has full chat)
-  const isAIAgentPage = location.pathname === "/ai-agent";
+  // Don't show chat head on AI Agent page (already has full chat) or Dashboard (has chatbot button)
+  const isExcludedPage = location.pathname === "/ai-agent" || location.pathname === "/";
   
-  if (!isEnabled || isAIAgentPage) return null;
+  if (!isEnabled || isExcludedPage) return null;
   
   return (
     <>
