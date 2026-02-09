@@ -66,23 +66,33 @@ self.addEventListener('notificationclick', function(event) {
     return;
   }
 
-  const url = event.notification.data?.url || '/';
+  // Build full URL from notification data
+  const urlPath = event.notification.data?.url || '/';
+  const fullUrl = new URL(urlPath, self.registration.scope).href;
 
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function(clientList) {
-      // Check if there's already a window open
+      // First try to focus an existing window
       for (let i = 0; i < clientList.length; i++) {
         const client = clientList[i];
-        if (client.url.includes(self.location.origin) && 'focus' in client) {
-          client.focus();
-          client.navigate(url);
-          return;
+        if ('focus' in client) {
+          return client.focus().then(function(focusedClient) {
+            // Post message to navigate instead of using navigate()
+            if (focusedClient && 'postMessage' in focusedClient) {
+              focusedClient.postMessage({
+                type: 'NOTIFICATION_CLICK',
+                url: urlPath
+              });
+            }
+            return focusedClient;
+          }).catch(function() {
+            // Focus failed, fall through to openWindow
+            return clients.openWindow(fullUrl);
+          });
         }
       }
-      // If no window is open, open a new one
-      if (clients.openWindow) {
-        return clients.openWindow(url);
-      }
+      // No existing window, open new one
+      return clients.openWindow(fullUrl);
     })
   );
 });

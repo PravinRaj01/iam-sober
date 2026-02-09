@@ -19,10 +19,18 @@ interface ProactiveInterventionProps {
 
 export function ProactiveIntervention({ onOpenChat }: ProactiveInterventionProps) {
   const [open, setOpen] = useState(false);
-  const [dismissedInterventionId, setDismissedInterventionId] = useState<string | null>(null);
+  const [dismissedInterventionId, setDismissedInterventionId] = useState<string | null>(() => {
+    return sessionStorage.getItem('dismissed_intervention_id');
+  });
   const navigate = useNavigate();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+
+  // Helper to persist dismissal
+  const dismissIntervention = (id: string) => {
+    sessionStorage.setItem('dismissed_intervention_id', id);
+    setDismissedInterventionId(id);
+  };
 
   const { data: interventionData } = useQuery({
     queryKey: ["proactive-check"],
@@ -65,7 +73,7 @@ export function ProactiveIntervention({ onOpenChat }: ProactiveInterventionProps
   const handleOpenChange = (newOpen: boolean) => {
     if (!newOpen && interventionData?.intervention?.id) {
       // Mark as dismissed so it won't reopen on refetch
-      setDismissedInterventionId(interventionData.intervention.id);
+      dismissIntervention(interventionData.intervention.id);
       // Also acknowledge in database so it doesn't persist
       acknowledgeMutation.mutate({ actionTaken: "dismissed" });
     }
@@ -86,14 +94,16 @@ export function ProactiveIntervention({ onOpenChat }: ProactiveInterventionProps
         })
         .eq("id", interventionData.intervention.id);
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["proactive-check"] });
-    },
+    // Don't invalidate immediately - the sessionStorage dismissal handles preventing re-display
   });
 
   const handleAction = (action: string) => {
-    acknowledgeMutation.mutate({ actionTaken: action });
+    // Immediately dismiss to prevent reappearing
+    if (interventionData?.intervention?.id) {
+      dismissIntervention(interventionData.intervention.id);
+    }
     setOpen(false);
+    acknowledgeMutation.mutate({ actionTaken: action });
 
     switch (action) {
       case "talk_to_coach":
@@ -115,8 +125,12 @@ export function ProactiveIntervention({ onOpenChat }: ProactiveInterventionProps
   };
 
   const handleFeedback = (wasHelpful: boolean) => {
-    acknowledgeMutation.mutate({ wasHelpful, actionTaken: "feedback_only" });
+    // Immediately dismiss to prevent reappearing
+    if (interventionData?.intervention?.id) {
+      dismissIntervention(interventionData.intervention.id);
+    }
     setOpen(false);
+    acknowledgeMutation.mutate({ wasHelpful, actionTaken: "feedback_only" });
     toast({
       title: wasHelpful ? "Glad I could help!" : "Thanks for the feedback",
       description: wasHelpful 

@@ -57,6 +57,19 @@ const AppContent = () => {
     return () => window.removeEventListener('storage', checkUnlock);
   }, []);
 
+  // Handle service worker navigation messages from push notifications
+  useEffect(() => {
+    if ('serviceWorker' in navigator) {
+      const handleMessage = (event: MessageEvent) => {
+        if (event.data?.type === 'NOTIFICATION_CLICK' && event.data?.url) {
+          window.location.href = event.data.url;
+        }
+      };
+      navigator.serviceWorker.addEventListener('message', handleMessage);
+      return () => navigator.serviceWorker.removeEventListener('message', handleMessage);
+    }
+  }, []);
+
   return (
     <Routes>
       <Route path="/auth" element={<Auth />} />
