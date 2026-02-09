@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useToast } from "@/hooks/use-toast";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -36,6 +36,7 @@ import ChatView from "@/components/ai-agent/ChatView";
 
 const AIAgent = () => {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -65,13 +66,33 @@ const AIAgent = () => {
   
   const { isRecording, isProcessing, startRecording, stopRecording } = useVoiceRecording(handleTranscription);
 
-  // Initialize conversation
+  // Initialize conversation - check for conversation param from deep link
   useEffect(() => {
     const initConversation = async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
         navigate("/auth");
         return;
+      }
+
+      // Check if there's a conversation ID in the URL (from notification deep link)
+      const conversationParam = searchParams.get("conversation");
+      if (conversationParam) {
+        // Verify the conversation belongs to this user
+        const { data: targetConv } = await supabase
+          .from("conversations")
+          .select("id")
+          .eq("id", conversationParam)
+          .eq("user_id", user.id)
+          .single();
+        
+        if (targetConv) {
+          setCurrentConversationId(conversationParam);
+          if (isMobile) setShowConversationList(false);
+          // Clear the search param to avoid re-triggering on navigation
+          setSearchParams({}, { replace: true });
+          return;
+        }
       }
 
       const { data: conversations } = await supabase
@@ -96,7 +117,7 @@ const AIAgent = () => {
     };
 
     initConversation();
-  }, [navigate, isMobile]);
+  }, [navigate, isMobile, searchParams, setSearchParams]);
 
   // Scroll to bottom on new messages
   useEffect(() => {

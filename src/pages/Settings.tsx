@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { Bell, User, Shield, LogOut, Sparkles, Info, RefreshCw, Trash2, AlertTriangle, Gamepad2, CheckCircle2, Loader2, Globe, Brain, Moon } from "lucide-react";
+import { Bell, User, Shield, LogOut, Sparkles, Info, RefreshCw, Trash2, AlertTriangle, Gamepad2, CheckCircle2, Loader2, Globe, Brain, Moon, MessageCircle } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 import { useBackground } from "@/contexts/BackgroundContext";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -67,6 +67,7 @@ const Settings = () => {
   const [quietHoursEnabled, setQuietHoursEnabled] = useState(false);
   const [quietHoursStart, setQuietHoursStart] = useState("22:00");
   const [quietHoursEnd, setQuietHoursEnd] = useState("08:00");
+  const [chatHeadEnabled, setChatHeadEnabled] = useState(false);
 
   // Comprehensive timezone list grouped by region
   const COMMON_TIMEZONES = [
@@ -231,6 +232,7 @@ const Settings = () => {
           setQuietHoursEnabled(notifPrefs.quiet_hours_enabled ?? false);
           setQuietHoursStart(notifPrefs.quiet_hours_start || "22:00");
           setQuietHoursEnd(notifPrefs.quiet_hours_end || "08:00");
+          setChatHeadEnabled(notifPrefs.chat_head_enabled ?? false);
         }
       }
       
@@ -305,6 +307,7 @@ const Settings = () => {
             quiet_hours_enabled: quietHoursEnabled,
             quiet_hours_start: quietHoursStart,
             quiet_hours_end: quietHoursEnd,
+            chat_head_enabled: chatHeadEnabled,
           },
         } as any)
         .eq("id", user.id);
@@ -735,6 +738,22 @@ const Settings = () => {
                     </div>
                   </div>
                 )}
+              </div>
+              
+              {/* Floating Chat Head */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between gap-4">
+                  <div className="space-y-0.5 min-w-0">
+                    <Label className="flex items-center gap-2">
+                      <MessageCircle className="h-4 w-4" />
+                      Floating Chat Head
+                    </Label>
+                    <p className="text-sm text-muted-foreground">
+                      Show a draggable AI Coach button on all pages for quick access
+                    </p>
+                  </div>
+                  <Switch checked={chatHeadEnabled} onCheckedChange={setChatHeadEnabled} className="shrink-0" />
+                </div>
               </div>
             </div>
 

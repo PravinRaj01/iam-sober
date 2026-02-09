@@ -463,6 +463,35 @@ serve(async (req) => {
                                riskScore >= 0.7 ? "high_priority_check_in" : 
                                riskSignals[0]?.type || "proactive_scheduled";
 
+      // Create a conversation with the AI message already present
+      let conversationId: string | null = null;
+      
+      const { data: newConversation } = await supabase
+        .from("conversations")
+        .insert({
+          user_id: userId,
+          title: "Recovery Coach Check-in"
+        })
+        .select()
+        .single();
+
+      if (newConversation) {
+        conversationId = newConversation.id;
+        
+        // Insert the AI's proactive message as the first message in the conversation
+        await supabase.from("chat_messages").insert({
+          user_id: userId,
+          conversation_id: conversationId,
+          role: "assistant",
+          content: aiMessage,
+          metadata: { 
+            is_proactive_intervention: true,
+            intervention_type: interventionType,
+            risk_score: riskScore
+          }
+        });
+      }
+
       // Save intervention with adaptive metadata
       const { data: intervention } = await supabase
         .from("ai_interventions")
@@ -488,6 +517,11 @@ serve(async (req) => {
         intervention_type: interventionType
       });
 
+      // Build notification URL - deep link to the pre-started conversation
+      const notificationUrl = conversationId 
+        ? `/ai-agent?conversation=${conversationId}` 
+        : "/ai-agent";
+
       // Send push notification
       const pushSub = {
         endpoint: subscription.endpoint,
@@ -506,10 +540,11 @@ serve(async (req) => {
         body: aiMessage.substring(0, 100) + (aiMessage.length > 100 ? "..." : ""),
         icon: "/pwa-192x192.png",
         badge: "/pwa-192x192.png",
-        url: "/",
+        url: notificationUrl,
         data: {
           type: "proactive_intervention",
           intervention_id: intervention?.id,
+          conversation_id: conversationId,
           risk_score: riskScore,
           is_critical: hasCriticalSignal,
         },

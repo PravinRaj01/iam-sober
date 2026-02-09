@@ -2,7 +2,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { SidebarProvider } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/AppSidebar";
 import { lazy, Suspense, useState, useEffect } from "react";
@@ -24,6 +24,9 @@ import Install from "./pages/Install";
 import { OnboardingWizard } from "./components/OnboardingWizard";
 import NotFound from "./pages/NotFound";
 import { AdminLayout } from "./layouts/AdminLayout";
+import { ChatHeadProvider, useChatHead } from "@/contexts/ChatHeadContext";
+import FloatingChatHead from "@/components/chatbot/FloatingChatHead";
+import ChatbotDrawer from "@/components/chatbot/ChatbotDrawer";
 
 const AdminPanel = lazy(() => import("./pages/AdminPanel"));
 const AdminLogin = lazy(() => import("./pages/AdminLogin"));
@@ -42,6 +45,29 @@ const AdminLoader = () => (
     </div>
   </div>
 );
+
+// Chat head overlay component that shows the floating button and drawer
+const ChatHeadOverlay = () => {
+  const location = useLocation();
+  const { isEnabled, isOpen, closeChat } = useChatHead();
+  
+  // Don't show chat head on AI Agent page (already has full chat)
+  const isAIAgentPage = location.pathname === "/ai-agent";
+  
+  if (!isEnabled || isAIAgentPage) return null;
+  
+  return (
+    <>
+      <FloatingChatHead />
+      <ChatbotDrawer 
+        state={isOpen ? "mini" : "closed"} 
+        onStateChange={(state) => {
+          if (state === "closed") closeChat();
+        }} 
+      />
+    </>
+  );
+};
 
 const AppContent = () => {
   // Track dev tools unlock state reactively
@@ -85,30 +111,33 @@ const AppContent = () => {
       <Route path="/admin/users" element={<AdminLayout><Suspense fallback={<AdminLoader />}><UserStats /></Suspense></AdminLayout>} />
 
       <Route path="/*" element={
-        <SidebarProvider>
-          <div className="min-h-screen flex w-full min-w-0 bg-background relative overflow-x-hidden">
-            <AppSidebar />
-            <main className="flex-1 min-w-0 overflow-auto overflow-x-hidden relative z-10 h-screen">
-              <Routes>
-                <Route path="/" element={<Dashboard />} />
-                <Route path="/check-in" element={<CheckIn />} />
-                <Route path="/journal" element={<Journal />} />
-                <Route path="/goals" element={<Goals />} />
-                <Route path="/coping" element={<CopingTools />} />
-                <Route path="/progress" element={<Progress />} />
-                <Route path="/achievements" element={<Achievements />} />
-                <Route path="/community" element={<Community />} />
-                <Route path="/wearables" element={<WearableData />} />
-                <Route path="/ai-observability" element={isDevUnlocked ? <AIObservability /> : <Navigate to="/settings" replace />} />
-                <Route path="/ai-agent" element={<AIAgent />} />
-                {/* AICapabilities merged into AIObservability */}
-                <Route path="/settings" element={<Settings />} />
-                <Route path="/settings" element={<Settings />} />
-                <Route path="*" element={<NotFound />} />
-              </Routes>
-            </main>
-          </div>
-        </SidebarProvider>
+        <ChatHeadProvider>
+          <SidebarProvider>
+            <div className="min-h-screen flex w-full min-w-0 bg-background relative overflow-x-hidden">
+              <AppSidebar />
+              <main className="flex-1 min-w-0 overflow-auto overflow-x-hidden relative z-10 h-screen">
+                <Routes>
+                  <Route path="/" element={<Dashboard />} />
+                  <Route path="/check-in" element={<CheckIn />} />
+                  <Route path="/journal" element={<Journal />} />
+                  <Route path="/goals" element={<Goals />} />
+                  <Route path="/coping" element={<CopingTools />} />
+                  <Route path="/progress" element={<Progress />} />
+                  <Route path="/achievements" element={<Achievements />} />
+                  <Route path="/community" element={<Community />} />
+                  <Route path="/wearables" element={<WearableData />} />
+                  <Route path="/ai-observability" element={isDevUnlocked ? <AIObservability /> : <Navigate to="/settings" replace />} />
+                  <Route path="/ai-agent" element={<AIAgent />} />
+                  {/* AICapabilities merged into AIObservability */}
+                  <Route path="/settings" element={<Settings />} />
+                  <Route path="/settings" element={<Settings />} />
+                  <Route path="*" element={<NotFound />} />
+                </Routes>
+              </main>
+              <ChatHeadOverlay />
+            </div>
+          </SidebarProvider>
+        </ChatHeadProvider>
       } />
     </Routes>
   );
